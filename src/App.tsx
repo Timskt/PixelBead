@@ -25,10 +25,27 @@ const SAMPLE_IMAGES = [
   "https://picsum.photos/seed/bead5/200/200",
 ]
 
+const GRID_PRESETS = [
+  { label: "20×20", value: 20 },
+  { label: "30×30", value: 30 },
+  { label: "40×40", value: 40 },
+  { label: "58×58", value: 58 },
+  { label: "80×80", value: 80 },
+  { label: "100×100", value: 100 },
+  { label: "不限", value: 0 },
+]
+
+function calcPixelSize(imgW: number, imgH: number, maxGrid: number): number {
+  if (maxGrid <= 0) return 20
+  const raw = Math.max(imgW, imgH) / maxGrid
+  return Math.max(8, Math.min(200, Math.round(raw)))
+}
+
 export default function App() {
   const [image, setImage] = useState<HTMLImageElement | null>(null)
   const [imageSize, setImageSize] = useState({ w: 0, h: 0 })
   const [pixelSize, setPixelSize] = useState(20)
+  const [maxGrid, setMaxGrid] = useState(40)
   const [displayMode, setDisplayMode] = useState<DisplayMode>("dmc")
   const [brand, setBrand] = useState("全部")
   const [result, setResult] = useState<PixelateResult | null>(null)
@@ -63,10 +80,14 @@ export default function App() {
         const img = await loadAndCompressImage(file)
         setImage(img)
         setImageSize({ w: img.width, h: img.height })
+        const autoSize = maxGrid > 0
+          ? calcPixelSize(img.width, img.height, maxGrid)
+          : pixelSize
+        setPixelSize(autoSize)
         const imageData = getImageData(img)
-        const res = await pixelateWithWorker(imageData, pixelSize, brand)
+        const res = await pixelateWithWorker(imageData, autoSize, brand)
         setResult(res)
-        showToast("图片加载成功")
+        showToast(`图片加载成功 · ${autoSize}px`)
       } catch (err) {
         console.error(err)
         showToast(err instanceof Error ? err.message : "图片加载失败")
@@ -74,17 +95,32 @@ export default function App() {
         setLoading(false)
       }
     },
-    [pixelSize, brand, showToast]
+    [pixelSize, maxGrid, brand, showToast]
   )
 
   const handleSliderChange = useCallback(
     (value: number) => {
       setPixelSize(value)
+      setMaxGrid(0) // 手动拖拽时切换为"不限"
       if (!image) return
       clearTimeout(debounceRef.current)
       debounceRef.current = setTimeout(() => {
         processImage(image, value, brand)
       }, 250)
+    },
+    [image, brand, processImage]
+  )
+
+  const handleGridPreset = useCallback(
+    (grid: number) => {
+      setMaxGrid(grid)
+      if (!image || grid <= 0) return
+      const autoSize = calcPixelSize(image.width, image.height, grid)
+      setPixelSize(autoSize)
+      clearTimeout(debounceRef.current)
+      debounceRef.current = setTimeout(() => {
+        processImage(image, autoSize, brand)
+      }, 150)
     },
     [image, brand, processImage]
   )
@@ -117,8 +153,12 @@ export default function App() {
       const img = await loadAndCompressImage(file)
       setImage(img)
       setImageSize({ w: img.width, h: img.height })
+      const autoSize = maxGrid > 0
+        ? calcPixelSize(img.width, img.height, maxGrid)
+        : pixelSize
+      setPixelSize(autoSize)
       const imageData = getImageData(img)
-      const res = await pixelateWithWorker(imageData, pixelSize, brand)
+      const res = await pixelateWithWorker(imageData, autoSize, brand)
       setResult(res)
       showToast("示例图片已加载")
     } catch (err) {
@@ -127,7 +167,7 @@ export default function App() {
     } finally {
       setLoading(false)
     }
-  }, [pixelSize, brand, showToast])
+  }, [pixelSize, maxGrid, brand, showToast])
 
   useEffect(() => {
     return () => {
@@ -176,6 +216,26 @@ export default function App() {
 
         {/* Controls */}
         <section className="mb-4 bg-bg-card rounded-2xl p-4 shadow-sm space-y-3">
+          {/* Grid Size Presets */}
+          <div className="flex items-center justify-between">
+            <span className="text-sm font-semibold text-text">目标尺寸</span>
+            <div className="flex bg-bg rounded-full p-0.5 flex-wrap gap-0.5">
+              {GRID_PRESETS.map((p) => (
+                <button
+                  key={p.value}
+                  onClick={() => handleGridPreset(p.value)}
+                  className={`px-2.5 py-1.5 text-xs font-semibold rounded-full transition-all ${
+                    maxGrid === p.value
+                      ? "bg-primary text-white shadow-sm"
+                      : "text-text-light"
+                  }`}
+                >
+                  {p.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
           <PixelSlider value={pixelSize} onChange={handleSliderChange} />
 
           <div className="flex items-center justify-between">
@@ -203,6 +263,14 @@ export default function App() {
           <div className="flex items-center justify-between">
             <span className="text-sm font-semibold text-text">品牌色板</span>
             <div className="flex bg-bg rounded-full p-0.5 flex-wrap gap-0.5">
+              <button
+                onClick={() => handleBrandChange("无限制")}
+                className={`px-3 py-1.5 text-xs font-semibold rounded-full transition-all ${
+                  brand === "无限制" ? "bg-accent2 text-white shadow-sm" : "text-text-light"
+                }`}
+              >
+                无限制
+              </button>
               {brandNames.map((b) => (
                 <button
                   key={b}
