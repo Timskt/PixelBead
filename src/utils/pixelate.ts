@@ -17,6 +17,7 @@ export interface PixelateResult {
   matrix: PixelData[][]
   width: number
   height: number
+  adjacentPairs: number
 }
 
 export function getBrandColors(brand: string): ColorEntry[] {
@@ -77,6 +78,16 @@ export function getImageData(img: HTMLImageElement): ImageData {
   return ctx.getImageData(0, 0, img.width, img.height)
 }
 
+// Analyze image complexity and suggest optimal pixel size
+export function suggestPixelSize(imgW: number, imgH: number): number {
+  // Target ~40x40 grid for moderate detail, scale with aspect ratio
+  const maxDim = Math.max(imgW, imgH)
+  // Aim for 30-50 pixels on the long side
+  const target = 40
+  const raw = maxDim / target
+  return Math.max(8, Math.min(60, Math.round(raw)))
+}
+
 const hexCache = Array.from({ length: 256 }, (_, i) =>
   i.toString(16).padStart(2, "0")
 )
@@ -116,12 +127,12 @@ export function pixelateWithWorker(
     const handler = (e: MessageEvent) => {
       if (gen !== jobGeneration) {
         w.removeEventListener("message", handler)
-        resolve({ matrix: [], width: 0, height: 0 })
+        resolve({ matrix: [], width: 0, height: 0, adjacentPairs: 0 })
         return
       }
       w.removeEventListener("message", handler)
-      const { matrix, cols, rows } = e.data
-      resolve({ matrix, width: cols, height: rows })
+      const { matrix, cols, rows, adjacentPairs } = e.data
+      resolve({ matrix, width: cols, height: rows, adjacentPairs: adjacentPairs ?? 0 })
     }
 
     w.addEventListener("message", handler)

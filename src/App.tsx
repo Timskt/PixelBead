@@ -274,9 +274,11 @@ export default function App() {
 
   const beadCounts = result && result.width > 0 ? getBeadCounts(result.matrix) : []
   const totalPixels = result ? result.width * result.height : 0
+  const uniqueColors = beadCounts.length
   const brandNames = Object.keys(BRAND_PALETTES)
   const physW = result && result.width > 0 ? (result.width * beadSize / 10).toFixed(1) : "0"
   const physH = result && result.height > 0 ? (result.height * beadSize / 10).toFixed(1) : "0"
+  const adjPairs = result?.adjacentPairs ?? 0
 
   return (
     <div className="min-h-dvh bg-bg" ref={appRef} tabIndex={-1}>
@@ -491,11 +493,11 @@ export default function App() {
             <div className="text-xs text-text-light pt-1 space-y-1">
               <div className="flex items-center justify-between">
                 <span>矩阵: {result.width} × {result.height}</span>
-                <span>共 {totalPixels} 颗 · {beadCounts.length} 种颜色</span>
+                <span>{totalPixels} 颗 · {uniqueColors} 种颜色</span>
               </div>
               <div className="flex items-center justify-between">
-                <span>实物尺寸: {physW} × {physH} cm</span>
-                <span>豆子规格: {beadSize}mm</span>
+                <span>实物: {physW} × {physH} cm</span>
+                <span>相邻同色: {adjPairs} 对 ({totalPixels > 0 ? Math.round(adjPairs / totalPixels * 100) : 0}% 可合并)</span>
               </div>
             </div>
           )}
