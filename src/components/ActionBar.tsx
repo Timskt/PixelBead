@@ -4,22 +4,31 @@ import { exportPNG, copyJSON } from "../utils/export"
 
 interface Props {
   result: PixelateResult | null
+  canvasRef: React.RefObject<HTMLCanvasElement | null>
   onRandomSample: () => void
   showToast: (msg: string) => void
 }
 
-export default function ActionBar({ result, onRandomSample, showToast }: Props) {
+export default function ActionBar({ result, canvasRef, onRandomSample, showToast }: Props) {
   const handleExport = useCallback(() => {
-    if (!result) return
-    exportPNG(result.canvas)
-    showToast("PNG 已导出 ✨")
-  }, [result, showToast])
+    const canvas = canvasRef.current
+    if (!canvas) return
+    try {
+      exportPNG(canvas)
+      showToast("PNG 已导出")
+    } catch {
+      showToast("导出失败")
+    }
+  }, [canvasRef, showToast])
 
-  const handleCopy = useCallback(() => {
+  const handleCopy = useCallback(async () => {
     if (!result) return
-    copyJSON(result.matrix).then(() => {
-      showToast("JSON 已复制到剪贴板 📋")
-    })
+    try {
+      await copyJSON(result.matrix)
+      showToast("JSON 已复制到剪贴板")
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : "复制失败")
+    }
   }, [result, showToast])
 
   return (
@@ -33,14 +42,14 @@ export default function ActionBar({ result, onRandomSample, showToast }: Props) 
       <div className="grid grid-cols-2 gap-2.5">
         <button
           onClick={handleExport}
-          disabled={!result}
+          disabled={!result || result.width === 0}
           className="py-3 rounded-full font-semibold text-sm bg-primary text-white disabled:opacity-40 disabled:cursor-not-allowed active:scale-[0.98] transition-transform shadow-sm"
         >
           📥 导出 PNG
         </button>
         <button
           onClick={handleCopy}
-          disabled={!result}
+          disabled={!result || result.width === 0}
           className="py-3 rounded-full font-semibold text-sm bg-accent2 text-white disabled:opacity-40 disabled:cursor-not-allowed active:scale-[0.98] transition-transform shadow-sm"
         >
           📋 复制数据

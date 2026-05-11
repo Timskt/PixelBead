@@ -1,4 +1,4 @@
-import { useRef, useState, useCallback, useEffect } from "react"
+import { useRef, useState, useCallback } from "react"
 import type { PixelateResult, DisplayMode } from "../utils/pixelate"
 import { renderPixelCanvas } from "../utils/pixelate"
 
@@ -6,85 +6,181 @@ interface Props {
   result: PixelateResult | null
   pixelSize: number
   displayMode: DisplayMode
+  canvasRef: React.RefObject<HTMLCanvasElement | null>
 }
 
-export default function PixelCanvas({ result, pixelSize, displayMode }: Props) {
+interface TooltipInfo {
+  x: number
+  y: number
+  dmc: string
+  colorName: string
+  hex: string
+}
+
+export default function PixelCanvas({ result, pixelSize, displayMode, canvasRef }: Props) {
   const containerRef = useRef<HTMLDivElement>(null)
-  const canvasRef = useRef<HTMLCanvasElement>(null)
-  const [scale, setScale] = useState(1)
-  const [translate, setTranslate] = useState({ x: 0, y: 0 })
-  const [isPanning, setIsPinning] = useState(false)
+  const canvasElRef = canvasRef
+  const scaleRef = useRef(1)
+  const translateRef = useRef({ x: 0, y: 0 })
+  const transformRef = useRef<HTMLDivElement>(null)
   const lastTouch = useRef({ x: 0, y: 0 })
   const lastDist = useRef(0)
+  const isPanningRef = useRef(false)
+  const fittedRef = useRef(false)
+  const [, forceRender] = useState(0)
+  const [tooltip, setTooltip] = useState<TooltipInfo | null>(null)
 
-  useEffect(() => {
-    if (!result || !canvasRef.current) return
-    const canvas = renderPixelCanvas(
-      result.matrix,
-      pixelSize,
-      result.width,
-      result.height,
-      displayMode
+  const applyTransform = useCallback(() => {
+    if (!transformRef.current) return
+    const { x, y } = translateRef.current
+    const s = scaleRef.current
+    transformRef.current.style.transform = `translate(${x}px,${y}px) scale(${s})`
+  }, [])
+
+  const renderCanvas = useCallback(() => {
+    if (!result || !canvasElRef.current) return
+    const rendered = renderPixelCanvas(
+      result.matrix, pixelSize, result.width, result.height, displayMode
     )
-    const ctx = canvasRef.current.getContext("2d")!
-    canvasRef.current.width = canvas.width
-    canvasRef.current.height = canvas.height
-    ctx.drawImage(canvas, 0, 0)
+    const ctx = canvasElRef.current.getContext("2d")
+    if (!ctx) return
+    canvasElRef.current.width = rendered.width
+    canvasElRef.current.height = rendered.height
+    ctx.drawImage(rendered, 0, 0)
   }, [result, pixelSize, displayMode])
 
-  const handleTouchStart = useCallback(
-    (e: React.TouchEvent) => {
+  // Render canvas content when inputs change
+  const prevResultRef = useRef<PixelateResult | null>(null)
+  if (result !== prevResultRef.current) {
+    prevResultRef.current = result
+    fittedRef.current = false
+  }
+
+  // Effect: render and fit on result/displayMode change
+  const effectRef = useRef<ReturnType<typeof setTimeout>>(undefined)
+  if (result) {
+    clearTimeout(effectRef.current)
+    effectRef.current = setTimeout(() => {
+      renderCanvas()
+      if (!fittedRef.current && containerRef.current && result.width > 0) {
+        const containerW = containerRef.current.clientWidth
+        const containerH = containerRef.current.clientHeight || containerRef.current.clientWidth
+        const canvasW = result.width * pixelSize
+        const canvasH = result.height * pixelSize
+        const fitScale = Math.min(containerW / canvasW, containerH / canvasH, 1)
+        scaleRef.current = fitScale
+        translateRef.current = { x: 0, y: 0 }
+        applyTransform()
+        fittedRef.current = true
+      }
+    }, 0)
+  }
+
+  // Touch events via native listener (non-passive)
+  const containerCallbackRef = useCallback((node: HTMLDivElement | null) => {
+    if (!node) return
+    ;(containerRef as React.MutableRefObject<HTMLDivElement | null>).current = node
+
+    const handleTouchStart = (e: TouchEvent) => {
+      setTooltip(null)
       if (e.touches.length === 1) {
-        setIsPinning(true)
+        isPanningRef.current = true
         lastTouch.current = { x: e.touches[0].clientX, y: e.touches[0].clientY }
       } else if (e.touches.length === 2) {
+        isPanningRef.current = false
         const dx = e.touches[0].clientX - e.touches[1].clientX
         const dy = e.touches[0].clientY - e.touches[1].clientY
         lastDist.current = Math.sqrt(dx * dx + dy * dy)
       }
-    },
-    []
-  )
+    }
 
-  const handleTouchMove = useCallback(
-    (e: React.TouchEvent) => {
+    const handleTouchMove = (e: TouchEvent) => {
       e.preventDefault()
-      if (e.touches.length === 1 && isPanning) {
+      if (e.touches.length === 1 && isPanningRef.current) {
         const dx = e.touches[0].clientX - lastTouch.current.x
         const dy = e.touches[0].clientY - lastTouch.current.y
-        setTranslate((prev) => ({ x: prev.x + dx, y: prev.y + dy }))
+        translateRef.current.x += dx
+        translateRef.current.y += dy
         lastTouch.current = { x: e.touches[0].clientX, y: e.touches[0].clientY }
+        applyTransform()
       } else if (e.touches.length === 2) {
         const dx = e.touches[0].clientX - e.touches[1].clientX
         const dy = e.touches[0].clientY - e.touches[1].clientY
         const dist = Math.sqrt(dx * dx + dy * dy)
         if (lastDist.current > 0) {
-          const scaleFactor = dist / lastDist.current
-          setScale((prev) => Math.max(0.2, Math.min(5, prev * scaleFactor)))
+          const factor = dist / lastDist.current
+          scaleRef.current = Math.max(0.5, Math.min(5, scaleRef.current * factor))
+          applyTransform()
         }
         lastDist.current = dist
       }
-    },
-    [isPanning]
-  )
+    }
 
-  const handleTouchEnd = useCallback(() => {
-    setIsPinning(false)
-    lastDist.current = 0
-  }, [])
+    const handleTouchEnd = () => {
+      isPanningRef.current = false
+      lastDist.current = 0
+      forceRender((n) => n + 1)
+    }
+
+    node.addEventListener("touchstart", handleTouchStart, { passive: true })
+    node.addEventListener("touchmove", handleTouchMove, { passive: false })
+    node.addEventListener("touchend", handleTouchEnd)
+
+    return () => {
+      node.removeEventListener("touchstart", handleTouchStart)
+      node.removeEventListener("touchmove", handleTouchMove)
+      node.removeEventListener("touchend", handleTouchEnd)
+    }
+  }, [applyTransform])
 
   const handleWheel = useCallback((e: React.WheelEvent) => {
     e.preventDefault()
     const delta = e.deltaY > 0 ? 0.9 : 1.1
-    setScale((prev) => Math.max(0.2, Math.min(5, prev * delta)))
-  }, [])
+    scaleRef.current = Math.max(0.5, Math.min(5, scaleRef.current * delta))
+    applyTransform()
+    forceRender((n) => n + 1)
+  }, [applyTransform])
 
   const resetView = useCallback(() => {
-    setScale(1)
-    setTranslate({ x: 0, y: 0 })
-  }, [])
+    if (!containerRef.current || !result || result.width === 0) return
+    const containerW = containerRef.current.clientWidth
+    const containerH = containerRef.current.clientHeight || containerRef.current.clientWidth
+    const canvasW = result.width * pixelSize
+    const canvasH = result.height * pixelSize
+    const fitScale = Math.min(containerW / canvasW, containerH / canvasH, 1)
+    scaleRef.current = fitScale
+    translateRef.current = { x: 0, y: 0 }
+    applyTransform()
+    forceRender((n) => n + 1)
+    setTooltip(null)
+  }, [result, pixelSize, applyTransform])
 
-  if (!result) {
+  const handleCanvasClick = useCallback(
+    (e: React.MouseEvent<HTMLCanvasElement>) => {
+      if (!result || !canvasElRef.current) return
+      const rect = canvasElRef.current.getBoundingClientRect()
+      const scaleX = canvasElRef.current.width / rect.width
+      const scaleY = canvasElRef.current.height / rect.height
+      const canvasX = (e.clientX - rect.left) * scaleX
+      const canvasY = (e.clientY - rect.top) * scaleY
+      const col = Math.floor(canvasX / pixelSize)
+      const row = Math.floor(canvasY / pixelSize)
+      if (row >= 0 && row < result.height && col >= 0 && col < result.width) {
+        const pixel = result.matrix[row][col]
+        const containerRect = containerRef.current!.getBoundingClientRect()
+        setTooltip({
+          x: e.clientX - containerRect.left,
+          y: e.clientY - containerRect.top - 10,
+          dmc: pixel.dmc,
+          colorName: pixel.colorName,
+          hex: pixel.hex,
+        })
+      }
+    },
+    [result, pixelSize]
+  )
+
+  if (!result || result.width === 0) {
     return (
       <div className="grid-bg rounded-2xl aspect-square flex items-center justify-center">
         <div className="text-center text-text-light/50">
@@ -95,37 +191,50 @@ export default function PixelCanvas({ result, pixelSize, displayMode }: Props) {
     )
   }
 
+  const zoomPercent = Math.round(scaleRef.current * 100)
+
   return (
     <div className="relative">
       <div
-        ref={containerRef}
+        ref={containerCallbackRef}
         className="grid-bg rounded-2xl overflow-hidden aspect-square relative touch-none"
-        onTouchStart={handleTouchStart}
-        onTouchMove={handleTouchMove}
-        onTouchEnd={handleTouchEnd}
         onWheel={handleWheel}
       >
         <div
+          ref={transformRef}
           className="w-full h-full flex items-center justify-center"
-          style={{
-            transform: `translate(${translate.x}px, ${translate.y}px) scale(${scale})`,
-            transformOrigin: "center center",
-            transition: isPanning ? "none" : "transform 0.1s ease",
-          }}
+          style={{ transformOrigin: "center center", willChange: "transform" }}
         >
           <canvas
-            ref={canvasRef}
-            className="max-w-full max-h-full object-contain"
+            ref={canvasElRef}
+            className="max-w-full max-h-full object-contain cursor-crosshair"
             style={{ imageRendering: "pixelated" }}
+            onClick={handleCanvasClick}
           />
         </div>
       </div>
-      <button
-        onClick={resetView}
-        className="absolute bottom-3 right-3 bg-white/90 backdrop-blur-sm text-xs text-text-light px-3 py-1.5 rounded-full shadow-sm active:scale-95 transition-transform"
-      >
-        重置视图
-      </button>
+
+      {tooltip && (
+        <div
+          className="absolute z-10 pointer-events-none bg-text text-white text-xs px-3 py-2 rounded-lg shadow-lg whitespace-nowrap"
+          style={{ left: tooltip.x, top: tooltip.y, transform: "translate(-50%,-100%)" }}
+        >
+          <div className="font-bold">{tooltip.dmc} · {tooltip.colorName}</div>
+          <div className="opacity-70">{tooltip.hex}</div>
+        </div>
+      )}
+
+      <div className="absolute bottom-3 right-3 flex items-center gap-2">
+        <span className="bg-white/80 backdrop-blur-sm text-[10px] text-text-light px-2 py-1 rounded-full">
+          {zoomPercent}%
+        </span>
+        <button
+          onClick={resetView}
+          className="bg-white/90 backdrop-blur-sm text-xs text-text-light px-3 py-1.5 rounded-full shadow-sm active:scale-95 transition-transform"
+        >
+          适应屏幕
+        </button>
+      </div>
     </div>
   )
 }

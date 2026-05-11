@@ -27,6 +27,7 @@ body {
   padding: 0;
   min-height: 100dvh;
   overflow-x: hidden;
+  padding-bottom: env(safe-area-inset-bottom);
 }
 
 /* Custom scrollbar */
