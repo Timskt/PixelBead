@@ -17,6 +17,7 @@ interface WorkerRequest {
   palette: ColorEntry[]
   quality: "fast" | "detail"
   maxColors: number
+  removeBg: boolean
 }
 
 interface WorkerResponse {
@@ -107,6 +108,26 @@ function sampleDetail(
   return [Math.round(best.tr / best.n), Math.round(best.tg / best.n), Math.round(best.tb / best.n)]
 }
 
+// White detection: auto-map near-white pixels to pure white
+function snapToWhite(r: number, g: number, b: number, palette: ColorEntry[]): PixelData | null {
+  if (r > 220 && g > 220 && b > 220) {
+    const lum = 0.299 * r + 0.587 * g + 0.114 * b
+    if (lum > 225) {
+      const white = palette.find((c) => c.dmc === "A1") ?? palette[0]
+      return {
+        dmc: white.dmc,
+        colorName: white.name,
+        hex: white.hex,
+        r: white.r,
+        g: white.g,
+        b: white.b,
+        textColor: "#000000",
+      }
+    }
+  }
+  return null
+}
+
 // Simplify colors: keep top N most used, remap rest to nearest (perceptual distance)
 function simplifyColors(
   matrix: PixelData[][],
@@ -150,7 +171,7 @@ function simplifyColors(
 }
 
 self.onmessage = (e: MessageEvent) => {
-  const { imageData, pixelSize, palette, quality, maxColors } = e.data as WorkerRequest
+  const { imageData, pixelSize, palette, quality, maxColors, removeBg } = e.data as WorkerRequest
   const { width, height, data } = imageData
 
   if (pixelSize <= 0) {
@@ -173,6 +194,16 @@ self.onmessage = (e: MessageEvent) => {
       const ey = Math.min(sy + pixelSize, height)
 
       const [avgR, avgG, avgB] = sampler(data, width, sx, sy, ex, ey)
+
+      // White detection: snap near-white to pure white
+      if (removeBg) {
+        const whitePixel = snapToWhite(avgR, avgG, avgB, palette)
+        if (whitePixel) {
+          rowData.push(whitePixel)
+          continue
+        }
+      }
+
       const color = lookupColor(lut, avgR, avgG, avgB)
       rowData.push({
         dmc: color.dmc,

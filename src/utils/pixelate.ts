@@ -105,7 +105,8 @@ export function pixelateWithWorker(
   pixelSize: number,
   brand: string = "全部",
   quality: QualityMode = "detail",
-  maxColors: number = 0
+  maxColors: number = 0,
+  removeBg: boolean = false
 ): Promise<PixelateResult> {
   return new Promise((resolve) => {
     const gen = ++jobGeneration
@@ -124,7 +125,7 @@ export function pixelateWithWorker(
     }
 
     w.addEventListener("message", handler)
-    w.postMessage({ imageData, pixelSize, palette, quality, maxColors }, [imageData.data.buffer])
+    w.postMessage({ imageData, pixelSize, palette, quality, maxColors, removeBg }, [imageData.data.buffer])
   })
 }
 
@@ -140,7 +141,8 @@ export function renderPixelCanvas(
   pixelSize: number,
   cols: number,
   rows: number,
-  displayMode: DisplayMode = "color"
+  displayMode: DisplayMode = "color",
+  hiRes = false
 ): HTMLCanvasElement {
   if (cols === 0 || rows === 0 || pixelSize <= 0) {
     const empty = document.createElement("canvas")
@@ -149,11 +151,18 @@ export function renderPixelCanvas(
     return empty
   }
 
+  const scale = hiRes ? 2 : 1
   const canvas = document.createElement("canvas")
-  canvas.width = cols * pixelSize
-  canvas.height = rows * pixelSize
+  const logicalW = cols * pixelSize
+  const logicalH = rows * pixelSize
+  canvas.width = logicalW * scale
+  canvas.height = logicalH * scale
+  canvas.style.width = logicalW + "px"
+  canvas.style.height = logicalH + "px"
   const ctx = canvas.getContext("2d")
   if (!ctx) return canvas
+
+  ctx.scale(scale, scale)
 
   for (let row = 0; row < rows; row++) {
     for (let col = 0; col < cols; col++) {
@@ -169,7 +178,7 @@ export function renderPixelCanvas(
       ctx.strokeRect(x, y, pixelSize, pixelSize)
 
       const label = displayMode === "dmc" ? pixel.dmc : pixel.colorName
-      const fontSize = Math.max(6, Math.floor(pixelSize * 0.4))
+      const fontSize = Math.max(8, Math.floor(pixelSize * 0.42))
       ctx.font = `bold ${fontSize}px "PingFang SC","Noto Sans SC",sans-serif`
       ctx.fillStyle = pixel.textColor
       ctx.textAlign = "center"

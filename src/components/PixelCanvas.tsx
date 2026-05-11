@@ -43,12 +43,14 @@ export default function PixelCanvas({
   const renderCanvas = useCallback(() => {
     if (!result || !canvasRef.current || result.width === 0) return
     const rendered = renderPixelCanvas(
-      result.matrix, pixelSize, result.width, result.height, displayMode
+      result.matrix, pixelSize, result.width, result.height, displayMode, true
     )
     const ctx = canvasRef.current.getContext("2d")
     if (!ctx) return
     canvasRef.current.width = rendered.width
     canvasRef.current.height = rendered.height
+    canvasRef.current.style.width = rendered.style.width
+    canvasRef.current.style.height = rendered.style.height
     ctx.drawImage(rendered, 0, 0)
   }, [result, pixelSize, displayMode, canvasRef])
 
