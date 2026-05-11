@@ -98,10 +98,14 @@ function getWorker(): Worker {
   return worker
 }
 
+export type QualityMode = "fast" | "detail"
+
 export function pixelateWithWorker(
   imageData: ImageData,
   pixelSize: number,
-  brand: string = "全部"
+  brand: string = "全部",
+  quality: QualityMode = "detail",
+  maxColors: number = 0
 ): Promise<PixelateResult> {
   return new Promise((resolve) => {
     const gen = ++jobGeneration
@@ -120,7 +124,7 @@ export function pixelateWithWorker(
     }
 
     w.addEventListener("message", handler)
-    w.postMessage({ imageData, pixelSize, palette }, [imageData.data.buffer])
+    w.postMessage({ imageData, pixelSize, palette, quality, maxColors }, [imageData.data.buffer])
   })
 }
 

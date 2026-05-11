@@ -13,25 +13,34 @@ import {
   terminateWorker,
   type PixelateResult,
   type DisplayMode,
+  type QualityMode,
 } from "./utils/pixelate"
 import { getBeadCounts } from "./utils/export"
 import { BRAND_PALETTES } from "./utils/colorMap"
 
 const SAMPLE_IMAGES = [
-  "https://picsum.photos/seed/bead1/200/200",
-  "https://picsum.photos/seed/bead2/200/200",
-  "https://picsum.photos/seed/bead3/200/200",
-  "https://picsum.photos/seed/bead4/200/200",
-  "https://picsum.photos/seed/bead5/200/200",
+  "https://picsum.photos/seed/bead1/300/300",
+  "https://picsum.photos/seed/bead2/300/300",
+  "https://picsum.photos/seed/bead3/300/300",
+  "https://picsum.photos/seed/bead4/300/300",
+  "https://picsum.photos/seed/bead5/300/300",
 ]
 
 const GRID_PRESETS = [
-  { label: "20×20", value: 20 },
-  { label: "30×30", value: 30 },
-  { label: "40×40", value: 40 },
-  { label: "58×58", value: 58 },
-  { label: "80×80", value: 80 },
-  { label: "100×100", value: 100 },
+  { label: "20", value: 20 },
+  { label: "30", value: 30 },
+  { label: "40", value: 40 },
+  { label: "58", value: 58 },
+  { label: "80", value: 80 },
+  { label: "100", value: 100 },
+  { label: "不限", value: 0 },
+]
+
+const COLOR_LIMITS = [
+  { label: "8", value: 8 },
+  { label: "12", value: 12 },
+  { label: "20", value: 20 },
+  { label: "30", value: 30 },
   { label: "不限", value: 0 },
 ]
 
@@ -46,6 +55,8 @@ export default function App() {
   const [imageSize, setImageSize] = useState({ w: 0, h: 0 })
   const [pixelSize, setPixelSize] = useState(20)
   const [maxGrid, setMaxGrid] = useState(40)
+  const [quality, setQuality] = useState<QualityMode>("detail")
+  const [maxColors, setMaxColors] = useState(0)
   const [displayMode, setDisplayMode] = useState<DisplayMode>("dmc")
   const [brand, setBrand] = useState("全部")
   const [result, setResult] = useState<PixelateResult | null>(null)
@@ -56,11 +67,11 @@ export default function App() {
   const canvasRef = useRef<HTMLCanvasElement>(null)
 
   const processImage = useCallback(
-    (img: HTMLImageElement, size: number, brandName: string) => {
+    (img: HTMLImageElement, size: number) => {
       setLoading(true)
       try {
         const imageData = getImageData(img)
-        pixelateWithWorker(imageData, size, brandName).then((res) => {
+        pixelateWithWorker(imageData, size, brand, quality, maxColors).then((res) => {
           setResult(res)
           setLoading(false)
         })
@@ -70,7 +81,7 @@ export default function App() {
         setLoading(false)
       }
     },
-    [showToast]
+    [brand, quality, maxColors, showToast]
   )
 
   const handleImageLoad = useCallback(
@@ -85,7 +96,7 @@ export default function App() {
           : pixelSize
         setPixelSize(autoSize)
         const imageData = getImageData(img)
-        const res = await pixelateWithWorker(imageData, autoSize, brand)
+        const res = await pixelateWithWorker(imageData, autoSize, brand, quality, maxColors)
         setResult(res)
         showToast(`图片加载成功 · ${autoSize}px`)
       } catch (err) {
@@ -95,20 +106,18 @@ export default function App() {
         setLoading(false)
       }
     },
-    [pixelSize, maxGrid, brand, showToast]
+    [pixelSize, maxGrid, brand, quality, maxColors, showToast]
   )
 
   const handleSliderChange = useCallback(
     (value: number) => {
       setPixelSize(value)
-      setMaxGrid(0) // 手动拖拽时切换为"不限"
+      setMaxGrid(0)
       if (!image) return
       clearTimeout(debounceRef.current)
-      debounceRef.current = setTimeout(() => {
-        processImage(image, value, brand)
-      }, 250)
+      debounceRef.current = setTimeout(() => processImage(image, value), 250)
     },
-    [image, brand, processImage]
+    [image, processImage]
   )
 
   const handleGridPreset = useCallback(
@@ -118,11 +127,9 @@ export default function App() {
       const autoSize = calcPixelSize(image.width, image.height, grid)
       setPixelSize(autoSize)
       clearTimeout(debounceRef.current)
-      debounceRef.current = setTimeout(() => {
-        processImage(image, autoSize, brand)
-      }, 150)
+      debounceRef.current = setTimeout(() => processImage(image, autoSize), 150)
     },
-    [image, brand, processImage]
+    [image, processImage]
   )
 
   const handleBrandChange = useCallback(
@@ -130,9 +137,27 @@ export default function App() {
       setBrand(newBrand)
       if (!image) return
       clearTimeout(debounceRef.current)
-      debounceRef.current = setTimeout(() => {
-        processImage(image, pixelSize, newBrand)
-      }, 150)
+      debounceRef.current = setTimeout(() => processImage(image, pixelSize), 150)
+    },
+    [image, pixelSize, processImage]
+  )
+
+  const handleQualityChange = useCallback(
+    (q: QualityMode) => {
+      setQuality(q)
+      if (!image) return
+      clearTimeout(debounceRef.current)
+      debounceRef.current = setTimeout(() => processImage(image, pixelSize), 150)
+    },
+    [image, pixelSize, processImage]
+  )
+
+  const handleMaxColorsChange = useCallback(
+    (n: number) => {
+      setMaxColors(n)
+      if (!image) return
+      clearTimeout(debounceRef.current)
+      debounceRef.current = setTimeout(() => processImage(image, pixelSize), 150)
     },
     [image, pixelSize, processImage]
   )
@@ -158,7 +183,7 @@ export default function App() {
         : pixelSize
       setPixelSize(autoSize)
       const imageData = getImageData(img)
-      const res = await pixelateWithWorker(imageData, autoSize, brand)
+      const res = await pixelateWithWorker(imageData, autoSize, brand, quality, maxColors)
       setResult(res)
       showToast("示例图片已加载")
     } catch (err) {
@@ -167,7 +192,7 @@ export default function App() {
     } finally {
       setLoading(false)
     }
-  }, [pixelSize, maxGrid, brand, showToast])
+  }, [pixelSize, maxGrid, brand, quality, maxColors, showToast])
 
   useEffect(() => {
     return () => {
@@ -216,7 +241,7 @@ export default function App() {
 
         {/* Controls */}
         <section className="mb-4 bg-bg-card rounded-2xl p-4 shadow-sm space-y-3">
-          {/* Grid Size Presets */}
+          {/* Grid Size */}
           <div className="flex items-center justify-between">
             <span className="text-sm font-semibold text-text">目标尺寸</span>
             <div className="flex bg-bg rounded-full p-0.5 flex-wrap gap-0.5">
@@ -225,9 +250,7 @@ export default function App() {
                   key={p.value}
                   onClick={() => handleGridPreset(p.value)}
                   className={`px-2.5 py-1.5 text-xs font-semibold rounded-full transition-all ${
-                    maxGrid === p.value
-                      ? "bg-primary text-white shadow-sm"
-                      : "text-text-light"
+                    maxGrid === p.value ? "bg-primary text-white shadow-sm" : "text-text-light"
                   }`}
                 >
                   {p.label}
@@ -238,6 +261,48 @@ export default function App() {
 
           <PixelSlider value={pixelSize} onChange={handleSliderChange} />
 
+          {/* Quality */}
+          <div className="flex items-center justify-between">
+            <span className="text-sm font-semibold text-text">画质</span>
+            <div className="flex bg-bg rounded-full p-0.5">
+              <button
+                onClick={() => handleQualityChange("fast")}
+                className={`px-4 py-1.5 text-xs font-semibold rounded-full transition-all ${
+                  quality === "fast" ? "bg-accent1 text-white shadow-sm" : "text-text-light"
+                }`}
+              >
+                快速
+              </button>
+              <button
+                onClick={() => handleQualityChange("detail")}
+                className={`px-4 py-1.5 text-xs font-semibold rounded-full transition-all ${
+                  quality === "detail" ? "bg-accent1 text-white shadow-sm" : "text-text-light"
+                }`}
+              >
+                细节
+              </button>
+            </div>
+          </div>
+
+          {/* Color Limit */}
+          <div className="flex items-center justify-between">
+            <span className="text-sm font-semibold text-text">颜色数量</span>
+            <div className="flex bg-bg rounded-full p-0.5 flex-wrap gap-0.5">
+              {COLOR_LIMITS.map((c) => (
+                <button
+                  key={c.value}
+                  onClick={() => handleMaxColorsChange(c.value)}
+                  className={`px-2.5 py-1.5 text-xs font-semibold rounded-full transition-all ${
+                    maxColors === c.value ? "bg-primary text-white shadow-sm" : "text-text-light"
+                  }`}
+                >
+                  {c.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Display Mode */}
           <div className="flex items-center justify-between">
             <span className="text-sm font-semibold text-text">显示模式</span>
             <div className="flex bg-bg rounded-full p-0.5">
@@ -260,6 +325,7 @@ export default function App() {
             </div>
           </div>
 
+          {/* Brand Palette */}
           <div className="flex items-center justify-between">
             <span className="text-sm font-semibold text-text">品牌色板</span>
             <div className="flex bg-bg rounded-full p-0.5 flex-wrap gap-0.5">
@@ -288,7 +354,7 @@ export default function App() {
           {result && result.width > 0 && (
             <div className="flex items-center justify-between text-xs text-text-light pt-1">
               <span>矩阵: {result.width} × {result.height}</span>
-              <span>共 {totalPixels} 个像素 · {beadCounts.length} 种颜色</span>
+              <span>共 {totalPixels} 颗 · {beadCounts.length} 种颜色</span>
             </div>
           )}
         </section>
