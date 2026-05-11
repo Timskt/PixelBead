@@ -41,12 +41,6 @@
    - **输出目录：** `dist`
 4. 点击保存并部署
 
-> 也可通过 Wrangler CLI 部署：
-> ```bash
-> npm install -g wrangler
-> wrangler pages deploy dist --project-name=pixelbead
-> ```
-
 ## 本地开发
 
 ```bash
@@ -89,7 +83,6 @@ PixelBead/
 ├── index.html                   # HTML 模板
 ├── vite.config.ts               # Vite 配置
 ├── vercel.json                  # Vercel 部署配置
-├── wrangler.toml                # Cloudflare Pages 部署配置
 └── package.json
 ```
 
