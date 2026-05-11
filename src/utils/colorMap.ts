@@ -88,9 +88,20 @@ function getContrastTextColor(r: number, g: number, b: number): string {
   return (0.299 * r + 0.587 * g + 0.114 * b) / 255 > 0.5 ? "#000000" : "#FFFFFF"
 }
 
+// Perceptual weighted distance: human eye is most sensitive to green, then red, then blue
+export function perceptualDist(
+  r1: number, g1: number, b1: number,
+  r2: number, g2: number, b2: number
+): number {
+  const dr = r1 - r2
+  const dg = g1 - g2
+  const db = b1 - b2
+  return 3 * dr * dr + 4 * dg * dg + 2 * db * db
+}
+
 export function buildColorLUT(
   palette: ColorEntry[] = COLOR_TABLE,
-  steps = 6
+  steps = 12
 ): ColorLUT {
   const levels = Array.from({ length: steps }, (_, i) =>
     Math.round((i * 255) / (steps - 1))
@@ -109,7 +120,7 @@ export function buildColorLUT(
         let minDist = Infinity
         let nearest = palette[0]
         for (const c of palette) {
-          const dist = (r - c.r) ** 2 + (g - c.g) ** 2 + (b - c.b) ** 2
+          const dist = perceptualDist(r, g, b, c.r, c.g, c.b)
           if (dist < minDist) {
             minDist = dist
             nearest = c

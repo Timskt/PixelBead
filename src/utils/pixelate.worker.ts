@@ -1,4 +1,4 @@
-import { COLOR_TABLE, buildColorLUT, lookupColor } from "./colorMap"
+import { COLOR_TABLE, buildColorLUT, lookupColor, perceptualDist } from "./colorMap"
 import type { ColorLUT, ColorEntry } from "./colorMap"
 
 interface PixelData {
@@ -40,11 +40,11 @@ function getLUT(palette: ColorEntry[]): ColorLUT {
 // Fast: simple block average
 function sampleAverage(
   data: Uint8ClampedArray, width: number,
-  startX: number, startY: number, endX: number, endY: number
+  sx: number, sy: number, ex: number, ey: number
 ): [number, number, number] {
   let tr = 0, tg = 0, tb = 0, count = 0
-  for (let y = startY; y < endY; y++) {
-    for (let x = startX; x < endX; x++) {
+  for (let y = sy; y < ey; y++) {
+    for (let x = sx; x < ex; x++) {
       const i = (y * width + x) * 4
       tr += data[i]; tg += data[i + 1]; tb += data[i + 2]
       count++
@@ -53,52 +53,61 @@ function sampleAverage(
   return [Math.round(tr / count), Math.round(tg / count), Math.round(tb / count)]
 }
 
-// Detail: edge-aware mode — splits block into quadrants, picks dominant
+// Detail: smart dominant color with variance-aware fallback
 function sampleDetail(
   data: Uint8ClampedArray, width: number,
-  startX: number, startY: number, endX: number, endY: number
+  sx: number, sy: number, ex: number, ey: number
 ): [number, number, number] {
-  // Quantize to 5 bits per channel for grouping
-  const colorCount = new Map<number, { r: number; g: number; b: number; n: number }>()
+  // 4-bit quantization (16 levels) for finer grouping
+  const groups = new Map<number, { tr: number; tg: number; tb: number; n: number }>()
   let tr = 0, tg = 0, tb = 0, count = 0
 
-  for (let y = startY; y < endY; y++) {
-    for (let x = startX; x < endX; x++) {
+  for (let y = sy; y < ey; y++) {
+    for (let x = sx; x < ex; x++) {
       const i = (y * width + x) * 4
       const r = data[i], g = data[i + 1], b = data[i + 2]
       tr += r; tg += g; tb += b; count++
 
-      const key = ((r >> 3) << 10) | ((g >> 3) << 5) | (b >> 3)
-      const existing = colorCount.get(key)
+      // 4-bit quantization: shift right by 4 (16 levels)
+      const key = ((r >> 4) << 8) | ((g >> 4) << 4) | (b >> 4)
+      const existing = groups.get(key)
       if (existing) {
         existing.n++
-        existing.r += r; existing.g += g; existing.b += b
+        existing.tr += r; existing.tg += g; existing.tb += b
       } else {
-        colorCount.set(key, { r, g, b, n: 1 })
+        groups.set(key, { tr: r, tg: g, tb: b, n: 1 })
       }
     }
   }
 
-  // If very uniform block, just use average
-  if (colorCount.size <= 2) {
+  // If very uniform (1-2 groups), just use average
+  if (groups.size <= 2) {
     return [Math.round(tr / count), Math.round(tg / count), Math.round(tb / count)]
   }
 
-  // Find dominant color group
+  // Find dominant group
   let bestKey = 0
-  let bestCount = 0
-  for (const [key, val] of colorCount) {
-    if (val.n > bestCount) {
-      bestCount = val.n
+  let bestN = 0
+  for (const [key, val] of groups) {
+    if (val.n > bestN) {
+      bestN = val.n
       bestKey = key
     }
   }
 
-  const best = colorCount.get(bestKey)!
-  return [Math.round(best.r / best.n), Math.round(best.g / best.n), Math.round(best.b / best.n)]
+  const dominantRatio = bestN / count
+
+  // If dominant group is less than 30% of block, the block is too mixed — use average
+  if (dominantRatio < 0.3) {
+    return [Math.round(tr / count), Math.round(tg / count), Math.round(tb / count)]
+  }
+
+  // Use dominant group's average color
+  const best = groups.get(bestKey)!
+  return [Math.round(best.tr / best.n), Math.round(best.tg / best.n), Math.round(best.tb / best.n)]
 }
 
-// Simplify colors: keep top N most used, remap rest to nearest
+// Simplify colors: keep top N most used, remap rest to nearest (perceptual distance)
 function simplifyColors(
   matrix: PixelData[][],
   cols: number,
@@ -132,7 +141,7 @@ function simplifyColors(
       let minDist = Infinity
       let nearest = keepColors[0]
       for (const k of keepColors) {
-        const dist = (p.r - k.r) ** 2 + (p.g - k.g) ** 2 + (p.b - k.b) ** 2
+        const dist = perceptualDist(p.r, p.g, p.b, k.r, k.g, k.b)
         if (dist < minDist) { minDist = dist; nearest = k }
       }
       return nearest
@@ -158,12 +167,12 @@ self.onmessage = (e: MessageEvent) => {
   for (let row = 0; row < rows; row++) {
     const rowData: PixelData[] = []
     for (let col = 0; col < cols; col++) {
-      const startX = col * pixelSize
-      const startY = row * pixelSize
-      const endX = Math.min(startX + pixelSize, width)
-      const endY = Math.min(startY + pixelSize, height)
+      const sx = col * pixelSize
+      const sy = row * pixelSize
+      const ex = Math.min(sx + pixelSize, width)
+      const ey = Math.min(sy + pixelSize, height)
 
-      const [avgR, avgG, avgB] = sampler(data, width, startX, startY, endX, endY)
+      const [avgR, avgG, avgB] = sampler(data, width, sx, sy, ex, ey)
       const color = lookupColor(lut, avgR, avgG, avgB)
       rowData.push({
         dmc: color.dmc,
