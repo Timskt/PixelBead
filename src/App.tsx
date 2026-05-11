@@ -44,6 +44,13 @@ const COLOR_LIMITS = [
   { label: "不限", value: 0 },
 ]
 
+const BEAD_SIZES = [
+  { label: "标准 2.6mm", value: 2.6 },
+  { label: "迷你 2.0mm", value: 2.0 },
+  { label: "Midi 2.8mm", value: 2.8 },
+  { label: "大颗 5.0mm", value: 5.0 },
+]
+
 function calcPixelSize(imgW: number, imgH: number, maxGrid: number): number {
   if (maxGrid <= 0) return 20
   const raw = Math.max(imgW, imgH) / maxGrid
@@ -57,6 +64,7 @@ export default function App() {
   const [maxGrid, setMaxGrid] = useState(40)
   const [quality, setQuality] = useState<QualityMode>("detail")
   const [maxColors, setMaxColors] = useState(0)
+  const [beadSize, setBeadSize] = useState(2.6)
   const [displayMode, setDisplayMode] = useState<DisplayMode>("dmc")
   const [brand, setBrand] = useState("全部")
   const [result, setResult] = useState<PixelateResult | null>(null)
@@ -204,6 +212,8 @@ export default function App() {
   const beadCounts = result && result.width > 0 ? getBeadCounts(result.matrix) : []
   const totalPixels = result ? result.width * result.height : 0
   const brandNames = Object.keys(BRAND_PALETTES)
+  const physW = result && result.width > 0 ? (result.width * beadSize / 10).toFixed(1) : "0"
+  const physH = result && result.height > 0 ? (result.height * beadSize / 10).toFixed(1) : "0"
 
   return (
     <div className="min-h-dvh bg-bg">
@@ -302,6 +312,24 @@ export default function App() {
             </div>
           </div>
 
+          {/* Bead Size */}
+          <div className="flex items-center justify-between">
+            <span className="text-sm font-semibold text-text">豆子规格</span>
+            <div className="flex bg-bg rounded-full p-0.5 flex-wrap gap-0.5">
+              {BEAD_SIZES.map((s) => (
+                <button
+                  key={s.value}
+                  onClick={() => setBeadSize(s.value)}
+                  className={`px-3 py-1.5 text-xs font-semibold rounded-full transition-all ${
+                    beadSize === s.value ? "bg-accent2 text-white shadow-sm" : "text-text-light"
+                  }`}
+                >
+                  {s.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
           {/* Display Mode */}
           <div className="flex items-center justify-between">
             <span className="text-sm font-semibold text-text">显示模式</span>
@@ -352,9 +380,15 @@ export default function App() {
           </div>
 
           {result && result.width > 0 && (
-            <div className="flex items-center justify-between text-xs text-text-light pt-1">
-              <span>矩阵: {result.width} × {result.height}</span>
-              <span>共 {totalPixels} 颗 · {beadCounts.length} 种颜色</span>
+            <div className="text-xs text-text-light pt-1 space-y-1">
+              <div className="flex items-center justify-between">
+                <span>矩阵: {result.width} × {result.height}</span>
+                <span>共 {totalPixels} 颗 · {beadCounts.length} 种颜色</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span>实物尺寸: {physW} × {physH} cm</span>
+                <span>豆子规格: {beadSize}mm</span>
+              </div>
             </div>
           )}
         </section>
@@ -372,6 +406,7 @@ export default function App() {
           <ActionBar
             result={result}
             canvasRef={canvasRef}
+            displayMode={displayMode}
             onRandomSample={handleRandomSample}
             showToast={showToast}
           />
