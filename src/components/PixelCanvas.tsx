@@ -7,6 +7,8 @@ interface Props {
   pixelSize: number
   displayMode: DisplayMode
   canvasRef: React.RefObject<HTMLCanvasElement | null>
+  imageWidth: number
+  imageHeight: number
 }
 
 interface TooltipInfo {
@@ -17,9 +19,10 @@ interface TooltipInfo {
   hex: string
 }
 
-export default function PixelCanvas({ result, pixelSize, displayMode, canvasRef }: Props) {
+export default function PixelCanvas({
+  result, pixelSize, displayMode, canvasRef, imageWidth, imageHeight,
+}: Props) {
   const containerRef = useRef<HTMLDivElement>(null)
-  const canvasElRef = canvasRef
   const scaleRef = useRef(1)
   const translateRef = useRef({ x: 0, y: 0 })
   const transformRef = useRef<HTMLDivElement>(null)
@@ -38,31 +41,31 @@ export default function PixelCanvas({ result, pixelSize, displayMode, canvasRef 
   }, [])
 
   const renderCanvas = useCallback(() => {
-    if (!result || !canvasElRef.current) return
+    if (!result || !canvasRef.current || result.width === 0) return
     const rendered = renderPixelCanvas(
       result.matrix, pixelSize, result.width, result.height, displayMode
     )
-    const ctx = canvasElRef.current.getContext("2d")
+    const ctx = canvasRef.current.getContext("2d")
     if (!ctx) return
-    canvasElRef.current.width = rendered.width
-    canvasElRef.current.height = rendered.height
+    canvasRef.current.width = rendered.width
+    canvasRef.current.height = rendered.height
     ctx.drawImage(rendered, 0, 0)
-  }, [result, pixelSize, displayMode])
+  }, [result, pixelSize, displayMode, canvasRef])
 
-  // Render canvas content when inputs change
+  // Reset fit when result changes
   const prevResultRef = useRef<PixelateResult | null>(null)
   if (result !== prevResultRef.current) {
     prevResultRef.current = result
     fittedRef.current = false
   }
 
-  // Effect: render and fit on result/displayMode change
+  // Render and fit
   const effectRef = useRef<ReturnType<typeof setTimeout>>(undefined)
-  if (result) {
+  if (result && result.width > 0) {
     clearTimeout(effectRef.current)
     effectRef.current = setTimeout(() => {
       renderCanvas()
-      if (!fittedRef.current && containerRef.current && result.width > 0) {
+      if (!fittedRef.current && containerRef.current) {
         const containerW = containerRef.current.clientWidth
         const containerH = containerRef.current.clientHeight || containerRef.current.clientWidth
         const canvasW = result.width * pixelSize
@@ -157,10 +160,10 @@ export default function PixelCanvas({ result, pixelSize, displayMode, canvasRef 
 
   const handleCanvasClick = useCallback(
     (e: React.MouseEvent<HTMLCanvasElement>) => {
-      if (!result || !canvasElRef.current) return
-      const rect = canvasElRef.current.getBoundingClientRect()
-      const scaleX = canvasElRef.current.width / rect.width
-      const scaleY = canvasElRef.current.height / rect.height
+      if (!result || !canvasRef.current) return
+      const rect = canvasRef.current.getBoundingClientRect()
+      const scaleX = canvasRef.current.width / rect.width
+      const scaleY = canvasRef.current.height / rect.height
       const canvasX = (e.clientX - rect.left) * scaleX
       const canvasY = (e.clientY - rect.top) * scaleY
       const col = Math.floor(canvasX / pixelSize)
@@ -177,9 +180,10 @@ export default function PixelCanvas({ result, pixelSize, displayMode, canvasRef 
         })
       }
     },
-    [result, pixelSize]
+    [result, pixelSize, canvasRef]
   )
 
+  // Empty state
   if (!result || result.width === 0) {
     return (
       <div className="grid-bg rounded-2xl aspect-square flex items-center justify-center">
@@ -192,12 +196,16 @@ export default function PixelCanvas({ result, pixelSize, displayMode, canvasRef 
   }
 
   const zoomPercent = Math.round(scaleRef.current * 100)
+  const aspectRatio = imageWidth > 0 && imageHeight > 0
+    ? `${imageWidth} / ${imageHeight}`
+    : `${result.width} / ${result.height}`
 
   return (
     <div className="relative">
       <div
         ref={containerCallbackRef}
-        className="grid-bg rounded-2xl overflow-hidden aspect-square relative touch-none"
+        className="grid-bg rounded-2xl overflow-hidden relative touch-none"
+        style={{ aspectRatio, maxHeight: "70vh" }}
         onWheel={handleWheel}
       >
         <div
@@ -206,7 +214,7 @@ export default function PixelCanvas({ result, pixelSize, displayMode, canvasRef 
           style={{ transformOrigin: "center center", willChange: "transform" }}
         >
           <canvas
-            ref={canvasElRef}
+            ref={canvasRef}
             className="max-w-full max-h-full object-contain cursor-crosshair"
             style={{ imageRendering: "pixelated" }}
             onClick={handleCanvasClick}

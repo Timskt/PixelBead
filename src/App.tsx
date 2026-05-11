@@ -27,6 +27,7 @@ const SAMPLE_IMAGES = [
 
 export default function App() {
   const [image, setImage] = useState<HTMLImageElement | null>(null)
+  const [imageSize, setImageSize] = useState({ w: 0, h: 0 })
   const [pixelSize, setPixelSize] = useState(20)
   const [displayMode, setDisplayMode] = useState<DisplayMode>("dmc")
   const [brand, setBrand] = useState("全部")
@@ -35,15 +36,14 @@ export default function App() {
   const { toast, showToast } = useToast()
   const debounceRef = useRef<ReturnType<typeof setTimeout>>(undefined)
   const lastSampleRef = useRef(-1)
-  const canvasContainerRef = useRef<HTMLDivElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
 
   const processImage = useCallback(
-    (img: HTMLImageElement, size: number) => {
+    (img: HTMLImageElement, size: number, brandName: string) => {
       setLoading(true)
       try {
         const imageData = getImageData(img)
-        pixelateWithWorker(imageData, size).then((res) => {
+        pixelateWithWorker(imageData, size, brandName).then((res) => {
           setResult(res)
           setLoading(false)
         })
@@ -62,8 +62,9 @@ export default function App() {
         setLoading(true)
         const img = await loadAndCompressImage(file)
         setImage(img)
+        setImageSize({ w: img.width, h: img.height })
         const imageData = getImageData(img)
-        const res = await pixelateWithWorker(imageData, pixelSize)
+        const res = await pixelateWithWorker(imageData, pixelSize, brand)
         setResult(res)
         showToast("图片加载成功")
       } catch (err) {
@@ -73,7 +74,7 @@ export default function App() {
         setLoading(false)
       }
     },
-    [pixelSize, showToast]
+    [pixelSize, brand, showToast]
   )
 
   const handleSliderChange = useCallback(
@@ -82,10 +83,22 @@ export default function App() {
       if (!image) return
       clearTimeout(debounceRef.current)
       debounceRef.current = setTimeout(() => {
-        processImage(image, value)
+        processImage(image, value, brand)
       }, 250)
     },
-    [image, processImage]
+    [image, brand, processImage]
+  )
+
+  const handleBrandChange = useCallback(
+    (newBrand: string) => {
+      setBrand(newBrand)
+      if (!image) return
+      clearTimeout(debounceRef.current)
+      debounceRef.current = setTimeout(() => {
+        processImage(image, pixelSize, newBrand)
+      }, 150)
+    },
+    [image, pixelSize, processImage]
   )
 
   const handleRandomSample = useCallback(async () => {
@@ -103,8 +116,9 @@ export default function App() {
       const file = new File([blob], "sample.jpg", { type: "image/jpeg" })
       const img = await loadAndCompressImage(file)
       setImage(img)
+      setImageSize({ w: img.width, h: img.height })
       const imageData = getImageData(img)
-      const res = await pixelateWithWorker(imageData, pixelSize)
+      const res = await pixelateWithWorker(imageData, pixelSize, brand)
       setResult(res)
       showToast("示例图片已加载")
     } catch (err) {
@@ -113,7 +127,7 @@ export default function App() {
     } finally {
       setLoading(false)
     }
-  }, [pixelSize, showToast])
+  }, [pixelSize, brand, showToast])
 
   useEffect(() => {
     return () => {
@@ -136,14 +150,27 @@ export default function App() {
         </header>
 
         {/* Preview Area */}
-        <section className="mb-4" ref={canvasContainerRef}>
+        <section className="mb-4">
           {loading ? (
-            <div className="grid-bg rounded-2xl aspect-square flex flex-col items-center justify-center">
+            <div
+              className="grid-bg rounded-2xl flex flex-col items-center justify-center"
+              style={{
+                aspectRatio: imageSize.w > 0 ? `${imageSize.w} / ${imageSize.h}` : "1",
+                maxHeight: "70vh",
+              }}
+            >
               <Loading />
               <p className="text-xs text-text-light mt-2">像素化处理中...</p>
             </div>
           ) : (
-            <PixelCanvas result={result} pixelSize={pixelSize} displayMode={displayMode} canvasRef={canvasRef} />
+            <PixelCanvas
+              result={result}
+              pixelSize={pixelSize}
+              displayMode={displayMode}
+              canvasRef={canvasRef}
+              imageWidth={imageSize.w}
+              imageHeight={imageSize.h}
+            />
           )}
         </section>
 
@@ -179,7 +206,7 @@ export default function App() {
               {brandNames.map((b) => (
                 <button
                   key={b}
-                  onClick={() => setBrand(b)}
+                  onClick={() => handleBrandChange(b)}
                   className={`px-3 py-1.5 text-xs font-semibold rounded-full transition-all ${
                     brand === b ? "bg-accent1 text-white shadow-sm" : "text-text-light"
                   }`}

@@ -1,5 +1,5 @@
 import { COLOR_TABLE, buildColorLUT, lookupColor } from "./colorMap"
-import type { ColorLUT } from "./colorMap"
+import type { ColorLUT, ColorEntry } from "./colorMap"
 
 interface PixelData {
   dmc: string
@@ -14,6 +14,7 @@ interface PixelData {
 interface WorkerRequest {
   imageData: ImageData
   pixelSize: number
+  palette: ColorEntry[]
 }
 
 interface WorkerResponse {
@@ -22,10 +23,20 @@ interface WorkerResponse {
   rows: number
 }
 
-let lut: ColorLUT = buildColorLUT(COLOR_TABLE)
+const lutCache = new Map<string, ColorLUT>()
+
+function getLUT(palette: ColorEntry[]): ColorLUT {
+  const key = palette.map((c) => c.dmc).sort().join(",")
+  let lut = lutCache.get(key)
+  if (!lut) {
+    lut = buildColorLUT(palette.length > 0 ? palette : COLOR_TABLE)
+    lutCache.set(key, lut)
+  }
+  return lut
+}
 
 self.onmessage = (e: MessageEvent) => {
-  const { imageData, pixelSize } = e.data as WorkerRequest
+  const { imageData, pixelSize, palette } = e.data as WorkerRequest
   const { width, height, data } = imageData
 
   if (pixelSize <= 0) {
@@ -33,6 +44,7 @@ self.onmessage = (e: MessageEvent) => {
     return
   }
 
+  const lut = getLUT(palette)
   const cols = Math.ceil(width / pixelSize)
   const rows = Math.ceil(height / pixelSize)
   const matrix: PixelData[][] = []

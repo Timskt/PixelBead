@@ -100,11 +100,13 @@ function getWorker(): Worker {
 
 export function pixelateWithWorker(
   imageData: ImageData,
-  pixelSize: number
+  pixelSize: number,
+  brand: string = "全部"
 ): Promise<PixelateResult> {
   return new Promise((resolve) => {
     const gen = ++jobGeneration
     const w = getWorker()
+    const palette = getBrandColors(brand)
 
     const handler = (e: MessageEvent) => {
       if (gen !== jobGeneration) {
@@ -118,7 +120,7 @@ export function pixelateWithWorker(
     }
 
     w.addEventListener("message", handler)
-    w.postMessage({ imageData, pixelSize }, [imageData.data.buffer])
+    w.postMessage({ imageData, pixelSize, palette }, [imageData.data.buffer])
   })
 }
 
