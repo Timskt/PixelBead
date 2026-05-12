@@ -160,18 +160,37 @@ export default function App() {
   }, [doProcess, showToast])
 
   // Crop handler
-  const handleCropApply = useCallback((crop: CropRect) => {
+  const handleCropApply = useCallback((crop: CropRect, polygon?: { x: number; y: number }[]) => {
     setShowCrop(false)
     const origImg = originalImageRef.current
     if (!origImg) return
+
     const sx = Math.round(crop.x * origImg.width)
     const sy = Math.round(crop.y * origImg.height)
     const sw = Math.round(crop.w * origImg.width)
     const sh = Math.round(crop.h * origImg.height)
     if (sw < 2 || sh < 2) return
+
     const canvas = document.createElement("canvas")
-    canvas.width = sw; canvas.height = sh
-    canvas.getContext("2d")!.drawImage(origImg, sx, sy, sw, sh, 0, 0, sw, sh)
+    canvas.width = sw
+    canvas.height = sh
+    const ctx = canvas.getContext("2d")!
+
+    if (polygon && polygon.length >= 3) {
+      // Polygon crop: clip to polygon path
+      ctx.beginPath()
+      for (let i = 0; i < polygon.length; i++) {
+        const px = polygon[i].x * origImg.width - sx
+        const py = polygon[i].y * origImg.height - sy
+        if (i === 0) ctx.moveTo(px, py)
+        else ctx.lineTo(px, py)
+      }
+      ctx.closePath()
+      ctx.clip()
+    }
+
+    ctx.drawImage(origImg, sx, sy, sw, sh, 0, 0, sw, sh)
+
     const cropped = new Image()
     cropped.onload = () => {
       setImage(cropped)
@@ -184,7 +203,7 @@ export default function App() {
       const autoSize = mg > 0 ? calcPixelSize(sw, sh, mg) : paramsRef.current.pixelSize
       setPixelSize(autoSize)
       doProcess(cropped, autoSize)
-      showToast(`已裁剪 ${sw}×${sh}`)
+      showToast(polygon ? `已裁剪自由形状 ${sw}×${sh}` : `已裁剪 ${sw}×${sh}`)
     }
     cropped.src = canvas.toDataURL()
   }, [doProcess, showToast])
