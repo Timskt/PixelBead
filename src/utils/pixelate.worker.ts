@@ -83,14 +83,21 @@ function autoExtractPalette(data: Uint8ClampedArray, maxColors: number): ColorEn
 
   // Step D: Fill remaining with lightest/darkest + evenly-spaced
   if (selected.length < maxColors) {
-    const remaining = unique.filter((c) => !selected.includes(c))
+    const remaining = unique.filter((c) =>
+      !selected.some((s) => s.r === c.r && s.g === c.g && s.b === c.b)
+    )
     remaining.sort((a, b) => (a.r + a.g + a.b) - (b.r + b.g + b.b))
     if (remaining.length > 0) selected.push(remaining[0])           // darkest
     if (remaining.length > 1) selected.push(remaining[remaining.length - 1]) // lightest
-    for (let i = 0; i < remaining.length && selected.length < maxColors; i += 10) {
+    for (let i = 2; i < remaining.length && selected.length < maxColors; i += 10) {
       selected.push(remaining[i])
     }
   }
+
+  // Always include white if not already present
+  const hasWhite = selected.some((c) => c.r > 240 && c.g > 240 && c.b > 240)
+  if (!hasWhite) selected.push({ r: 255, g: 255, b: 255 })
+
   if (selected.length === 0 && unique.length > 0) selected.push(unique[0])
 
   // Step E: K-Means refinement (8 iterations)

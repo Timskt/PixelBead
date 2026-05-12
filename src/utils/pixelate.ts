@@ -78,24 +78,6 @@ export function getImageData(img: HTMLImageElement): ImageData {
   return ctx.getImageData(0, 0, img.width, img.height)
 }
 
-// Analyze image complexity and suggest optimal pixel size
-export function suggestPixelSize(imgW: number, imgH: number): number {
-  // Target ~40x40 grid for moderate detail, scale with aspect ratio
-  const maxDim = Math.max(imgW, imgH)
-  // Aim for 30-50 pixels on the long side
-  const target = 40
-  const raw = maxDim / target
-  return Math.max(8, Math.min(60, Math.round(raw)))
-}
-
-const hexCache = Array.from({ length: 256 }, (_, i) =>
-  i.toString(16).padStart(2, "0")
-)
-
-export function rgbToHex(r: number, g: number, b: number): string {
-  return `#${hexCache[r]}${hexCache[g]}${hexCache[b]}`
-}
-
 let worker: Worker | null = null
 let jobGeneration = 0
 
@@ -140,20 +122,14 @@ export function pixelateWithWorker(
   })
 }
 
-export function terminateWorker() {
-  if (worker) {
-    worker.terminate()
-    worker = null
-  }
-}
-
 export function renderPixelCanvas(
   matrix: PixelData[][],
   pixelSize: number,
   cols: number,
   rows: number,
   displayMode: DisplayMode = "color",
-  hiRes = false
+  hiRes = false,
+  showText = true
 ): HTMLCanvasElement {
   if (cols === 0 || rows === 0 || pixelSize <= 0) {
     const empty = document.createElement("canvas")
@@ -189,21 +165,21 @@ export function renderPixelCanvas(
       ctx.lineWidth = 0.5
       ctx.strokeRect(x, y, pixelSize, pixelSize)
 
-      const label = displayMode === "dmc" ? pixel.dmc : pixel.colorName
-      const fontSize = Math.max(8, Math.floor(pixelSize * 0.45))
-      ctx.font = `bold ${fontSize}px "PingFang SC","Noto Sans SC",sans-serif`
-      ctx.fillStyle = pixel.textColor
-      ctx.textAlign = "center"
-      ctx.textBaseline = "middle"
-
-      // Text shadow for readability on light backgrounds
-      if (pixel.textColor === "#000000") {
-        ctx.shadowColor = "rgba(255,255,255,0.5)"
-        ctx.shadowBlur = 1
+      if (showText) {
+        const label = displayMode === "dmc" ? pixel.dmc : pixel.colorName
+        const fontSize = Math.max(8, Math.floor(pixelSize * 0.45))
+        ctx.font = `bold ${fontSize}px "PingFang SC","Noto Sans SC",sans-serif`
+        ctx.fillStyle = pixel.textColor
+        ctx.textAlign = "center"
+        ctx.textBaseline = "middle"
+        if (pixel.textColor === "#000000") {
+          ctx.shadowColor = "rgba(255,255,255,0.5)"
+          ctx.shadowBlur = 1
+        }
+        ctx.fillText(label, x + pixelSize / 2, y + pixelSize / 2)
+        ctx.shadowColor = "transparent"
+        ctx.shadowBlur = 0
       }
-      ctx.fillText(label, x + pixelSize / 2, y + pixelSize / 2)
-      ctx.shadowColor = "transparent"
-      ctx.shadowBlur = 0
     }
   }
 
