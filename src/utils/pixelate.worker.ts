@@ -44,6 +44,10 @@ function saturation(r: number, g: number, b: number): number {
   return Math.max(r, g, b) - Math.min(r, g, b)
 }
 
+function rgbToHex(r: number, g: number, b: number): string {
+  return "#" + ((1 << 24) | (r << 16) | (g << 8) | b).toString(16).slice(1)
+}
+
 function autoExtractPalette(data: Uint8ClampedArray, maxColors: number): ColorEntry[] {
   // Step A: Deduplicate & subsample (max ~4000 unique colors)
   const seen = new Set<string>()
@@ -125,20 +129,21 @@ function autoExtractPalette(data: Uint8ClampedArray, maxColors: number): ColorEn
     centroids = newCentroids
   }
 
-  // Convert to ColorEntry format — map back to nearest real DMC color
+  // Convert to ColorEntry format — keep extracted RGB for display, find nearest DMC for label only
   const dmcColors = COLOR_TABLE
   return centroids.map((c) => {
     let minDist = Infinity
-    let nearest = dmcColors[0]
+    let nearestDmc = dmcColors[0]
     for (const d of dmcColors) {
       const dist = (c.r - d.r) ** 2 + (c.g - d.g) ** 2 + (c.b - d.b) ** 2
-      if (dist < minDist) { minDist = dist; nearest = d }
+      if (dist < minDist) { minDist = dist; nearestDmc = d }
     }
+    // Use extracted color's REAL hex/RGB for display, DMC code for label
     return {
-      dmc: nearest.dmc,
-      name: nearest.name,
-      hex: nearest.hex,
-      r: nearest.r, g: nearest.g, b: nearest.b,
+      dmc: nearestDmc.dmc,
+      name: nearestDmc.name,
+      hex: rgbToHex(c.r, c.g, c.b),
+      r: c.r, g: c.g, b: c.b,
     }
   })
 }
