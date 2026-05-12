@@ -44,6 +44,14 @@ const COLOR_LIMITS = [
   { label: "不限", value: 0 },
 ]
 
+const SCALE_PRESETS = [
+  { label: "100%", value: 1 },
+  { label: "75%", value: 0.75 },
+  { label: "50%", value: 0.5 },
+  { label: "33%", value: 0.33 },
+  { label: "25%", value: 0.25 },
+]
+
 const BEAD_SIZES = [
   { label: "标准 2.6mm", value: 2.6 },
   { label: "迷你 2.0mm", value: 2.0 },
@@ -83,6 +91,7 @@ export default function App() {
   const [maxColors, setMaxColors] = useState(0)
   const [beadSize, setBeadSize] = useState(2.6)
   const [removeBg, setRemoveBg] = useState(false)
+  const [scale, setScale] = useState(1)
   const [displayMode, setDisplayMode] = useState<DisplayMode>("dmc")
   const [brand, setBrand] = useState("全部")
   const [result, setResult] = useState<PixelateResult | null>(null)
@@ -95,8 +104,8 @@ export default function App() {
   const appRef = useRef<HTMLDivElement>(null)
 
   // Stable ref for latest params (avoids stale closures)
-  const paramsRef = useRef({ pixelSize, brand, quality, maxColors, removeBg, maxGrid })
-  paramsRef.current = { pixelSize, brand, quality, maxColors, removeBg, maxGrid }
+  const paramsRef = useRef({ pixelSize, brand, quality, maxColors, removeBg, maxGrid, scale })
+  paramsRef.current = { pixelSize, brand, quality, maxColors, removeBg, maxGrid, scale }
 
   // Core processing function — reads from ref, always has latest values
   const doProcess = useCallback((img: HTMLImageElement, size?: number) => {
@@ -105,7 +114,7 @@ export default function App() {
     setLoading(true)
     try {
       const imageData = getImageData(img)
-      pixelateWithWorker(imageData, sz, p.brand, p.quality, p.maxColors, p.removeBg)
+      pixelateWithWorker(imageData, sz, p.brand, p.quality, p.maxColors, p.removeBg, p.scale)
         .then((res) => { setResult(res); setLoading(false) })
         .catch((err) => { console.error(err); showToast("处理失败"); setLoading(false) })
     } catch (err) {
@@ -119,7 +128,7 @@ export default function App() {
   useEffect(() => {
     if (!image) return
     doProcess(image)
-  }, [brand, quality, maxColors, removeBg, image, doProcess])
+  }, [brand, quality, maxColors, removeBg, scale, image, doProcess])
 
   // Image load handler
   const handleImageLoad = useCallback(async (file: File) => {
@@ -222,10 +231,10 @@ export default function App() {
     const hash = encodeSettings({
       grid: maxGrid, px: pixelSize, q: quality,
       colors: maxColors, bead: beadSize, bg: removeBg ? 1 : 0,
-      mode: displayMode, brand,
+      mode: displayMode, brand, scale,
     })
     history.replaceState(null, "", "#" + hash)
-  }, [maxGrid, pixelSize, quality, maxColors, beadSize, removeBg, displayMode, brand])
+  },     [maxGrid, pixelSize, quality, maxColors, beadSize, removeBg, displayMode, brand, scale])
 
   // Load from URL hash on mount
   useEffect(() => {
@@ -238,6 +247,7 @@ export default function App() {
     if (p.bg === "1") setRemoveBg(true)
     if (p.mode && (p.mode === "dmc" || p.mode === "color")) setDisplayMode(p.mode)
     if (p.brand) setBrand(p.brand)
+    if (p.scale) setScale(Number(p.scale))
   }, [])
 
   // Memoize expensive computations
@@ -315,6 +325,23 @@ export default function App() {
           </div>
 
           <PixelSlider value={pixelSize} onChange={handleSliderChange} />
+
+          <div className="flex items-center justify-between">
+            <span className="text-sm font-semibold text-text">图片缩放</span>
+            <div className="flex bg-bg rounded-full p-0.5 flex-wrap gap-0.5">
+              {SCALE_PRESETS.map((s) => (
+                <button key={s.value} onClick={() => setScale(s.value)}
+                  className={`px-3 py-1.5 text-xs font-semibold rounded-full transition-all ${scale === s.value ? "bg-primary text-white shadow-sm" : "text-text-light"}`}>
+                  {s.label}
+                </button>
+              ))}
+            </div>
+          </div>
+          {scale < 1 && result && result.width > 0 && (
+            <p className="text-[10px] text-accent2 -mt-1">
+              缩放 {Math.round(scale * 100)}% → 珠子从 {Math.ceil(imageSize.w / pixelSize) * Math.ceil(imageSize.h / pixelSize)} 减至 {result.width * result.height}
+            </p>
+          )}
 
           <div className="flex items-center justify-between">
             <span className="text-sm font-semibold text-text">画质</span>

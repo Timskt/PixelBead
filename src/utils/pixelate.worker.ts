@@ -18,6 +18,7 @@ interface WorkerRequest {
   quality: "fast" | "detail"
   maxColors: number
   removeBg: boolean
+  scale: number
 }
 
 interface WorkerResponse {
@@ -253,25 +254,42 @@ function mergeAdjacent(matrix: PixelData[][], cols: number, rows: number): numbe
 
 // ========== Main Pipeline ==========
 self.onmessage = (e: MessageEvent) => {
-  const { imageData, pixelSize, palette, quality, maxColors, removeBg } = e.data as WorkerRequest
-  const { width, height } = imageData
+  const { imageData, pixelSize, palette, quality, maxColors, removeBg, scale } = e.data as WorkerRequest
+  let { width, height } = imageData
 
   if (pixelSize <= 0) {
     self.postMessage({ matrix: [], cols: 0, rows: 0, adjacentPairs: 0 })
     return
   }
 
+  // Step 0: Scale image (preserve quality with high-quality resampling)
+  let srcData = imageData
+  if (scale > 0 && scale < 1) {
+    const sw = Math.max(1, Math.round(width * scale))
+    const sh = Math.max(1, Math.round(height * scale))
+    const scaleCanvas = new OffscreenCanvas(sw, sh)
+    const scaleCtx = scaleCanvas.getContext("2d")!
+    scaleCtx.imageSmoothingEnabled = true
+    scaleCtx.imageSmoothingQuality = "high"
+    const srcCanvas = new OffscreenCanvas(width, height)
+    srcCanvas.getContext("2d")!.putImageData(imageData, 0, 0)
+    scaleCtx.drawImage(srcCanvas, 0, 0, sw, sh)
+    srcData = scaleCtx.getImageData(0, 0, sw, sh)
+    width = sw
+    height = sh
+  }
+
   const cols = Math.ceil(width / pixelSize)
   const rows = Math.ceil(height / pixelSize)
 
-  // Step 1: Canvas resampling (browser-quality anti-aliasing)
+  // Step 1: Canvas resampling to target grid size
   const offscreen = new OffscreenCanvas(cols, rows)
   const ctx = offscreen.getContext("2d")!
   ctx.imageSmoothingEnabled = true
   ctx.imageSmoothingQuality = "high"
 
   const srcCanvas = new OffscreenCanvas(width, height)
-  srcCanvas.getContext("2d")!.putImageData(imageData, 0, 0)
+  srcCanvas.getContext("2d")!.putImageData(srcData, 0, 0)
   ctx.drawImage(srcCanvas, 0, 0, cols, rows)
 
   const downscaled = ctx.getImageData(0, 0, cols, rows)
