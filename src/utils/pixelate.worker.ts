@@ -28,7 +28,6 @@ interface WorkerResponse {
 }
 
 // ========== Weighted Euclidean (reference formula) ==========
-// Luminance-adaptive: green 4x, red/blue adjust with average red level
 function colorDistSq(
   r1: number, g1: number, b1: number,
   r2: number, g2: number, b2: number
@@ -40,37 +39,131 @@ function colorDistSq(
   return ((512 + avgR) * dr * dr >> 8) + 4 * dg * dg + ((768 - avgR) * db * db >> 8)
 }
 
-// ========== Nearest Palette Match (exact, no LUT) ==========
+// ========== K-Means Auto Palette Extraction (reference algorithm) ==========
+function rgbToHex(r: number, g: number, b: number): string {
+  return "#" + ((1 << 24) | (r << 16) | (g << 8) | b).toString(16).slice(1)
+}
 
+function saturation(r: number, g: number, b: number): number {
+  return Math.max(r, g, b) - Math.min(r, g, b)
+}
+
+function autoExtractPalette(data: Uint8ClampedArray, maxColors: number): ColorEntry[] {
+  // Step A: Deduplicate & subsample (max ~4000 unique colors)
+  const seen = new Set<string>()
+  const unique: { r: number; g: number; b: number }[] = []
+  const step = Math.max(1, Math.floor(data.length / 4 / 4000))
+
+  for (let i = 0; i < data.length; i += 4 * step) {
+    const key = `${data[i]},${data[i + 1]},${data[i + 2]}`
+    if (!seen.has(key)) {
+      seen.add(key)
+      unique.push({ r: data[i], g: data[i + 1], b: data[i + 2] })
+    }
+  }
+
+  // Step B: Sort by saturation (descending) — prioritize colorful colors
+  unique.sort((a, b) => saturation(b.r, b.g, b.b) - saturation(a.r, a.g, a.b))
+
+  // Step C: Greedy selection with distance threshold (RGB dist^2 < 1600)
+  const threshold = 1600
+  const selected: { r: number; g: number; b: number }[] = []
+
+  for (const c of unique) {
+    if (selected.length >= maxColors) break
+    let tooClose = false
+    for (const s of selected) {
+      if ((c.r - s.r) ** 2 + (c.g - s.g) ** 2 + (c.b - s.b) ** 2 < threshold) {
+        tooClose = true
+        break
+      }
+    }
+    if (!tooClose) selected.push(c)
+  }
+
+  // Step D: Fill remaining with lightest/darkest + evenly-spaced
+  if (selected.length < maxColors) {
+    const remaining = unique.filter((c) => !selected.includes(c))
+    remaining.sort((a, b) => (a.r + a.g + a.b) - (b.r + b.g + b.b))
+    if (remaining.length > 0) selected.push(remaining[0])           // darkest
+    if (remaining.length > 1) selected.push(remaining[remaining.length - 1]) // lightest
+    for (let i = 0; i < remaining.length && selected.length < maxColors; i += 10) {
+      selected.push(remaining[i])
+    }
+  }
+  if (selected.length === 0 && unique.length > 0) selected.push(unique[0])
+
+  // Step E: K-Means refinement (8 iterations)
+  let centroids = selected.map((c) => ({ ...c }))
+
+  for (let iter = 0; iter < 8; iter++) {
+    // Assignment: use subsample for speed
+    const clusters: { r: number; g: number; b: number }[][] =
+      Array.from({ length: centroids.length }, () => [])
+
+    const sampleStep = Math.max(1, Math.floor(unique.length / 2000))
+    for (let i = 0; i < unique.length; i += sampleStep) {
+      const p = unique[i]
+      let minDist = Infinity
+      let bestIdx = 0
+      for (let j = 0; j < centroids.length; j++) {
+        const dist = (p.r - centroids[j].r) ** 2 + (p.g - centroids[j].g) ** 2 + (p.b - centroids[j].b) ** 2
+        if (dist < minDist) { minDist = dist; bestIdx = j }
+      }
+      clusters[bestIdx].push(p)
+    }
+
+    // Update: recompute centroids
+    const newCentroids: { r: number; g: number; b: number }[] = []
+    for (let j = 0; j < centroids.length; j++) {
+      const cluster = clusters[j]
+      if (cluster.length === 0) { newCentroids.push(centroids[j]); continue }
+      let sr = 0, sg = 0, sb = 0
+      for (const p of cluster) { sr += p.r; sg += p.g; sb += p.b }
+      newCentroids.push({
+        r: Math.round(sr / cluster.length),
+        g: Math.round(sg / cluster.length),
+        b: Math.round(sb / cluster.length),
+      })
+    }
+    centroids = newCentroids
+  }
+
+  // Convert to ColorEntry format
+  return centroids.map((c, i) => ({
+    dmc: `AUTO-${i + 1}`,
+    name: `色${i + 1}`,
+    hex: rgbToHex(c.r, c.g, c.b).toUpperCase(),
+    r: c.r, g: c.g, b: c.b,
+  }))
+}
+
+// ========== Nearest Palette Match (exact) ==========
 function nearestColor(r: number, g: number, b: number, palette: ColorEntry[]): PixelData {
   let minDist = Infinity
   let best = palette[0]
   for (const c of palette) {
     const dist = colorDistSq(r, g, b, c.r, c.g, c.b)
-    if (dist < minDist) {
-      minDist = dist
-      best = c
-    }
+    if (dist < minDist) { minDist = dist; best = c }
   }
+  const lum = 0.299 * best.r + 0.587 * best.g + 0.114 * best.b
   return {
     dmc: best.dmc, colorName: best.name, hex: best.hex,
-    r: best.r, g: best.g, b: best.b, textColor: "#000000",
+    r: best.r, g: best.g, b: best.b,
+    textColor: lum > 128 ? "#000000" : "#FFFFFF",
   }
 }
 
 // ========== White Detection ==========
-
 function isNearWhite(r: number, g: number, b: number): boolean {
   return r > 220 && g > 220 && b > 220 && (0.299 * r + 0.587 * g + 0.114 * b) > 225
 }
 
-// ========== Majority Filter (8-connected, reference algorithm) ==========
-// If current color has <=2 votes among 8 neighbors AND dominant has >=4 votes, replace
+// ========== Majority Filter (8-connected, x2) ==========
 function majorityFilter(
   matrix: PixelData[][], cols: number, rows: number
 ): PixelData[][] {
   const out = matrix.map((row) => row.map((p) => ({ ...p })))
-
   for (let row = 1; row < rows - 1; row++) {
     for (let col = 1; col < cols - 1; col++) {
       const cur = matrix[row][col]
@@ -80,24 +173,17 @@ function majorityFilter(
         matrix[row - 1][col - 1], matrix[row - 1][col + 1],
         matrix[row + 1][col - 1], matrix[row + 1][col + 1],
       ]
-
       const votes = new Map<string, number>()
       let maxVotes = 0
       let dominantDmc = cur.dmc
-
       for (const n of neighbors) {
         const count = (votes.get(n.dmc) || 0) + 1
         votes.set(n.dmc, count)
-        if (count > maxVotes) {
-          maxVotes = count
-          dominantDmc = n.dmc
-        }
+        if (count > maxVotes) { maxVotes = count; dominantDmc = n.dmc }
       }
-
       const curVotes = votes.get(cur.dmc) || 0
       if (curVotes <= 2 && maxVotes >= 4) {
-        const domPixel = neighbors.find((n) => n.dmc === dominantDmc)!
-        out[row][col] = { ...domPixel }
+        out[row][col] = { ...neighbors.find((n) => n.dmc === dominantDmc)! }
       }
     }
   }
@@ -105,7 +191,6 @@ function majorityFilter(
 }
 
 // ========== Color Simplification ==========
-
 function simplifyColors(
   matrix: PixelData[][], cols: number, rows: number, maxColors: number
 ): PixelData[][] {
@@ -138,7 +223,6 @@ function simplifyColors(
 }
 
 // ========== Merge Adjacent ==========
-
 function mergeAdjacent(matrix: PixelData[][], cols: number, rows: number): number {
   let merged = 0
   for (let row = 0; row < rows; row++)
@@ -151,7 +235,6 @@ function mergeAdjacent(matrix: PixelData[][], cols: number, rows: number): numbe
 }
 
 // ========== Main Pipeline ==========
-
 self.onmessage = (e: MessageEvent) => {
   const { imageData, pixelSize, palette, quality, maxColors, removeBg } = e.data as WorkerRequest
   const { width, height } = imageData
@@ -161,7 +244,6 @@ self.onmessage = (e: MessageEvent) => {
     return
   }
 
-  const colors = palette.length > 0 ? palette : COLOR_TABLE
   const cols = Math.ceil(width / pixelSize)
   const rows = Math.ceil(height / pixelSize)
 
@@ -177,7 +259,16 @@ self.onmessage = (e: MessageEvent) => {
 
   const downscaled = ctx.getImageData(0, 0, cols, rows)
 
-  // Step 2: Per-pixel exact nearest palette match (no LUT)
+  // Step 2: Determine palette (auto-extract if using "无限制" / all colors)
+  let colors: ColorEntry[]
+  if (palette.length >= COLOR_TABLE.length && palette.length === COLOR_TABLE.length) {
+    // "无限制" / 全部 mode — auto-extract from image for best match
+    colors = autoExtractPalette(downscaled.data, maxColors > 0 ? Math.min(maxColors, 30) : 20)
+  } else {
+    colors = palette
+  }
+
+  // Step 3: Per-pixel exact nearest palette match
   let matrix: PixelData[][] = []
   for (let row = 0; row < rows; row++) {
     const rowData: PixelData[] = []
@@ -201,13 +292,13 @@ self.onmessage = (e: MessageEvent) => {
     matrix.push(rowData)
   }
 
-  // Step 3: Majority filter x2 (reference algorithm)
+  // Step 4: Majority filter x2
   if (quality === "detail") {
     matrix = majorityFilter(matrix, cols, rows)
     matrix = majorityFilter(matrix, cols, rows)
   }
 
-  // Step 4: Color simplification
+  // Step 5: Color simplification
   if (maxColors > 0) {
     matrix = simplifyColors(matrix, cols, rows, maxColors)
   }
