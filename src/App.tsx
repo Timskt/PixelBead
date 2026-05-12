@@ -89,7 +89,7 @@ export default function App() {
   const [imageSize, setImageSize] = useState({ w: 0, h: 0 })
   const [pixelSize, setPixelSize] = useState(20)
   const [maxGrid, setMaxGrid] = useState(40)
-  const [quality, setQuality] = useState<QualityMode>("detail")
+  const [quality, setQuality] = useState<QualityMode>("fast")
   const [maxColors, setMaxColors] = useState(0)
   const [beadSize, setBeadSize] = useState(2.6)
   const [removeBg, setRemoveBg] = useState(false)
@@ -384,7 +384,12 @@ export default function App() {
 
           <div className="flex items-center justify-between">
             <span className="text-sm font-semibold text-text">图片缩放</span>
-            <span className="text-sm font-bold text-primary bg-primary/10 px-3 py-1 rounded-full">{scale}%</span>
+            <div className="flex items-center gap-1">
+              <input type="number" min={1} max={100} value={scale}
+                onChange={(e) => { const v = parseInt(e.target.value, 10); if (!isNaN(v)) setScale(Math.max(1, Math.min(100, v))) }}
+                className="w-14 text-center text-sm font-bold text-primary bg-primary/10 px-2 py-1 rounded-full border-none outline-none focus:ring-2 focus:ring-primary/30" />
+              <span className="text-xs text-text-light">%</span>
+            </div>
           </div>
           <div className="flex items-center gap-3">
             <span className="text-xs text-text-light">1</span>
