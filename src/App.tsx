@@ -5,6 +5,7 @@ import PixelCanvas from "./components/PixelCanvas"
 import ActionBar from "./components/ActionBar"
 import BeadSummary from "./components/BeadSummary"
 import Loading from "./components/Loading"
+import CropOverlay, { type CropRect } from "./components/CropOverlay"
 import { useToast, ToastDisplay } from "./components/Toast"
 import {
   loadAndCompressImage,
@@ -45,11 +46,12 @@ const COLOR_LIMITS = [
 ]
 
 const SCALE_PRESETS = [
-  { label: "100%", value: 1 },
-  { label: "75%", value: 0.75 },
-  { label: "50%", value: 0.5 },
-  { label: "33%", value: 0.33 },
-  { label: "25%", value: 0.25 },
+  { label: "100", value: 100 },
+  { label: "75", value: 75 },
+  { label: "50", value: 50 },
+  { label: "33", value: 33 },
+  { label: "25", value: 25 },
+  { label: "10", value: 10 },
 ]
 
 const BEAD_SIZES = [
@@ -91,7 +93,8 @@ export default function App() {
   const [maxColors, setMaxColors] = useState(0)
   const [beadSize, setBeadSize] = useState(2.6)
   const [removeBg, setRemoveBg] = useState(false)
-  const [scale, setScale] = useState(1)
+  const [scale, setScale] = useState(100)
+  const [showCrop, setShowCrop] = useState(false)
   const [displayMode, setDisplayMode] = useState<DisplayMode>("dmc")
   const [brand, setBrand] = useState("全部")
   const [result, setResult] = useState<PixelateResult | null>(null)
@@ -101,20 +104,20 @@ export default function App() {
   const lastSampleRef = useRef(-1)
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const originalUrlRef = useRef<string>("")
+  const originalImageRef = useRef<HTMLImageElement | null>(null)
   const appRef = useRef<HTMLDivElement>(null)
 
   // Stable ref for latest params (avoids stale closures)
   const paramsRef = useRef({ pixelSize, brand, quality, maxColors, removeBg, maxGrid, scale })
   paramsRef.current = { pixelSize, brand, quality, maxColors, removeBg, maxGrid, scale }
 
-  // Core processing function — reads from ref, always has latest values
   const doProcess = useCallback((img: HTMLImageElement, size?: number) => {
     const p = paramsRef.current
     const sz = size ?? p.pixelSize
     setLoading(true)
     try {
       const imageData = getImageData(img)
-      pixelateWithWorker(imageData, sz, p.brand, p.quality, p.maxColors, p.removeBg, p.scale)
+      pixelateWithWorker(imageData, sz, p.brand, p.quality, p.maxColors, p.removeBg, p.scale / 100)
         .then((res) => { setResult(res); setLoading(false) })
         .catch((err) => { console.error(err); showToast("处理失败"); setLoading(false) })
     } catch (err) {
@@ -136,15 +139,14 @@ export default function App() {
       setLoading(true)
       const img = await loadAndCompressImage(file)
       setImage(img)
+      originalImageRef.current = img
       setImageSize({ w: img.width, h: img.height })
 
-      // Store original for compare
       const tc = document.createElement("canvas")
       tc.width = img.width; tc.height = img.height
       tc.getContext("2d")!.drawImage(img, 0, 0)
       originalUrlRef.current = tc.toDataURL("image/jpeg", 0.8)
 
-      // Auto pixel size
       const mg = paramsRef.current.maxGrid
       const autoSize = mg > 0 ? calcPixelSize(img.width, img.height, mg) : paramsRef.current.pixelSize
       setPixelSize(autoSize)
@@ -155,6 +157,36 @@ export default function App() {
       showToast(err instanceof Error ? err.message : "图片加载失败")
       setLoading(false)
     }
+  }, [doProcess, showToast])
+
+  // Crop handler
+  const handleCropApply = useCallback((crop: CropRect) => {
+    setShowCrop(false)
+    const origImg = originalImageRef.current
+    if (!origImg) return
+    const sx = Math.round(crop.x * origImg.width)
+    const sy = Math.round(crop.y * origImg.height)
+    const sw = Math.round(crop.w * origImg.width)
+    const sh = Math.round(crop.h * origImg.height)
+    if (sw < 2 || sh < 2) return
+    const canvas = document.createElement("canvas")
+    canvas.width = sw; canvas.height = sh
+    canvas.getContext("2d")!.drawImage(origImg, sx, sy, sw, sh, 0, 0, sw, sh)
+    const cropped = new Image()
+    cropped.onload = () => {
+      setImage(cropped)
+      setImageSize({ w: sw, h: sh })
+      const tc = document.createElement("canvas")
+      tc.width = sw; tc.height = sh
+      tc.getContext("2d")!.drawImage(cropped, 0, 0)
+      originalUrlRef.current = tc.toDataURL("image/jpeg", 0.8)
+      const mg = paramsRef.current.maxGrid
+      const autoSize = mg > 0 ? calcPixelSize(sw, sh, mg) : paramsRef.current.pixelSize
+      setPixelSize(autoSize)
+      doProcess(cropped, autoSize)
+      showToast(`已裁剪 ${sw}×${sh}`)
+    }
+    cropped.src = canvas.toDataURL()
   }, [doProcess, showToast])
 
   // Slider change — debounce reprocess
@@ -301,12 +333,18 @@ export default function App() {
             <PixelCanvas result={result} pixelSize={pixelSize} displayMode={displayMode} canvasRef={canvasRef} imageWidth={imageSize.w} imageHeight={imageSize.h} />
           )}
           {result && result.width > 0 && (
-            <button
-              onClick={() => setCompareMode((v) => !v)}
-              className={`absolute top-3 left-3 text-xs px-3 py-1.5 rounded-full shadow-sm transition-all ${compareMode ? "bg-primary text-white" : "bg-white/90 backdrop-blur-sm text-text-light"}`}
-            >
-              {compareMode ? "退出对比" : "👁 对比原图"}
-            </button>
+            <div className="absolute top-3 left-3 flex gap-2">
+              <button onClick={() => setCompareMode((v) => !v)}
+                className={`text-xs px-3 py-1.5 rounded-full shadow-sm transition-all ${compareMode ? "bg-primary text-white" : "bg-white/90 backdrop-blur-sm text-text-light"}`}>
+                {compareMode ? "退出对比" : "👁 对比"}
+              </button>
+              {originalImageRef.current && (
+                <button onClick={() => setShowCrop(true)}
+                  className="text-xs px-3 py-1.5 rounded-full shadow-sm bg-white/90 backdrop-blur-sm text-text-light active:scale-95 transition-transform">
+                  ✂ 裁剪
+                </button>
+              )}
+            </div>
           )}
         </section>
 
@@ -328,18 +366,26 @@ export default function App() {
 
           <div className="flex items-center justify-between">
             <span className="text-sm font-semibold text-text">图片缩放</span>
-            <div className="flex bg-bg rounded-full p-0.5 flex-wrap gap-0.5">
-              {SCALE_PRESETS.map((s) => (
-                <button key={s.value} onClick={() => setScale(s.value)}
-                  className={`px-3 py-1.5 text-xs font-semibold rounded-full transition-all ${scale === s.value ? "bg-primary text-white shadow-sm" : "text-text-light"}`}>
-                  {s.label}
-                </button>
-              ))}
-            </div>
+            <span className="text-sm font-bold text-primary bg-primary/10 px-3 py-1 rounded-full">{scale}%</span>
           </div>
-          {scale < 1 && result && result.width > 0 && (
+          <div className="flex items-center gap-3">
+            <span className="text-xs text-text-light">1</span>
+            <input type="range" min={1} max={100} step={1} value={scale}
+              onChange={(e) => setScale(Number(e.target.value))}
+              className="flex-1" />
+            <span className="text-xs text-text-light">100</span>
+          </div>
+          <div className="flex bg-bg rounded-full p-0.5 flex-wrap gap-0.5">
+            {SCALE_PRESETS.map((s) => (
+              <button key={s.value} onClick={() => setScale(s.value)}
+                className={`px-3 py-1.5 text-xs font-semibold rounded-full transition-all ${scale === s.value ? "bg-primary text-white shadow-sm" : "text-text-light"}`}>
+                {s.label}%
+              </button>
+            ))}
+          </div>
+          {scale < 100 && result && result.width > 0 && (
             <p className="text-[10px] text-accent2 -mt-1">
-              缩放 {Math.round(scale * 100)}% → 珠子从 {Math.ceil(imageSize.w / pixelSize) * Math.ceil(imageSize.h / pixelSize)} 减至 {result.width * result.height}
+              缩放 {scale}% → 珠子 {result.width * result.height} 颗
             </p>
           )}
 
@@ -430,6 +476,9 @@ export default function App() {
         </footer>
       </div>
       <ToastDisplay toast={toast} />
+      {showCrop && originalUrlRef.current && (
+        <CropOverlay imageUrl={originalUrlRef.current} onApply={handleCropApply} onCancel={() => setShowCrop(false)} />
+      )}
     </div>
   )
 }
