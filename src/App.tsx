@@ -32,6 +32,7 @@ const GRID_PRESETS = [
   { label: "58", value: 58 },
   { label: "80", value: 80 },
   { label: "100", value: 100 },
+  { label: "150", value: 150 },
   { label: "不限", value: 0 },
 ]
 
@@ -53,7 +54,7 @@ const BEAD_SIZES = [
 function calcPixelSize(imgW: number, imgH: number, maxGrid: number): number {
   if (maxGrid <= 0) return 20
   const raw = Math.max(imgW, imgH) / maxGrid
-  return Math.max(8, Math.min(200, Math.round(raw)))
+  return Math.max(1, Math.min(500, Math.round(raw)))
 }
 
 // Encode settings to URL hash
