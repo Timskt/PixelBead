@@ -40,10 +40,6 @@ function colorDistSq(
 }
 
 // ========== K-Means Auto Palette Extraction (reference algorithm) ==========
-function rgbToHex(r: number, g: number, b: number): string {
-  return "#" + ((1 << 24) | (r << 16) | (g << 8) | b).toString(16).slice(1)
-}
-
 function saturation(r: number, g: number, b: number): number {
   return Math.max(r, g, b) - Math.min(r, g, b)
 }
@@ -129,13 +125,22 @@ function autoExtractPalette(data: Uint8ClampedArray, maxColors: number): ColorEn
     centroids = newCentroids
   }
 
-  // Convert to ColorEntry format
-  return centroids.map((c, i) => ({
-    dmc: `AUTO-${i + 1}`,
-    name: `色${i + 1}`,
-    hex: rgbToHex(c.r, c.g, c.b).toUpperCase(),
-    r: c.r, g: c.g, b: c.b,
-  }))
+  // Convert to ColorEntry format — map back to nearest real DMC color
+  const dmcColors = COLOR_TABLE
+  return centroids.map((c) => {
+    let minDist = Infinity
+    let nearest = dmcColors[0]
+    for (const d of dmcColors) {
+      const dist = (c.r - d.r) ** 2 + (c.g - d.g) ** 2 + (c.b - d.b) ** 2
+      if (dist < minDist) { minDist = dist; nearest = d }
+    }
+    return {
+      dmc: nearest.dmc,
+      name: nearest.name,
+      hex: nearest.hex,
+      r: nearest.r, g: nearest.g, b: nearest.b,
+    }
+  })
 }
 
 // ========== Nearest Palette Match (exact) ==========

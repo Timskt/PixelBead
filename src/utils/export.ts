@@ -233,15 +233,19 @@ export function renderPatternCanvas(
 ): HTMLCanvasElement {
   const labelW = Math.max(28, Math.floor(pixelSize * 0.8))
   const labelH = Math.max(20, Math.floor(pixelSize * 0.6))
-  const w = labelW + cols * pixelSize
-  const h = labelH + rows * pixelSize
+  const logicalW = labelW + cols * pixelSize
+  const logicalH = labelH + rows * pixelSize
+  const scale = 2
 
   const canvas = document.createElement("canvas")
-  canvas.width = w
-  canvas.height = h
+  canvas.width = logicalW * scale
+  canvas.height = logicalH * scale
   const ctx = canvas.getContext("2d")!
+  ctx.scale(scale, scale)
+  ctx.imageSmoothingEnabled = false
+
   ctx.fillStyle = "#FFFFFF"
-  ctx.fillRect(0, 0, w, h)
+  ctx.fillRect(0, 0, logicalW, logicalH)
 
   // Column labels
   ctx.fillStyle = "#636E72"
@@ -249,12 +253,10 @@ export function renderPatternCanvas(
   ctx.textAlign = "center"
   ctx.textBaseline = "middle"
   for (let col = 0; col < cols; col++) {
-    const label = colLabel(col)
-    ctx.fillText(label, labelW + col * pixelSize + pixelSize / 2, labelH / 2)
+    ctx.fillText(colLabel(col), labelW + col * pixelSize + pixelSize / 2, labelH / 2)
   }
 
   // Row labels
-  ctx.textAlign = "center"
   for (let row = 0; row < rows; row++) {
     ctx.fillText(String(row + 1), labelW / 2, labelH + row * pixelSize + pixelSize / 2)
   }

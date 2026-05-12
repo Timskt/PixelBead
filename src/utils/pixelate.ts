@@ -162,7 +162,7 @@ export function renderPixelCanvas(
     return empty
   }
 
-  const scale = hiRes ? 2 : 1
+  const scale = hiRes ? 3 : 1
   const canvas = document.createElement("canvas")
   const logicalW = cols * pixelSize
   const logicalH = rows * pixelSize
@@ -174,6 +174,7 @@ export function renderPixelCanvas(
   if (!ctx) return canvas
 
   ctx.scale(scale, scale)
+  ctx.imageSmoothingEnabled = false
 
   for (let row = 0; row < rows; row++) {
     for (let col = 0; col < cols; col++) {
@@ -184,17 +185,25 @@ export function renderPixelCanvas(
       ctx.fillStyle = pixel.hex
       ctx.fillRect(x, y, pixelSize, pixelSize)
 
-      ctx.strokeStyle = "rgba(0,0,0,0.08)"
+      ctx.strokeStyle = "rgba(0,0,0,0.1)"
       ctx.lineWidth = 0.5
       ctx.strokeRect(x, y, pixelSize, pixelSize)
 
       const label = displayMode === "dmc" ? pixel.dmc : pixel.colorName
-      const fontSize = Math.max(8, Math.floor(pixelSize * 0.42))
+      const fontSize = Math.max(8, Math.floor(pixelSize * 0.45))
       ctx.font = `bold ${fontSize}px "PingFang SC","Noto Sans SC",sans-serif`
       ctx.fillStyle = pixel.textColor
       ctx.textAlign = "center"
       ctx.textBaseline = "middle"
+
+      // Text shadow for readability on light backgrounds
+      if (pixel.textColor === "#000000") {
+        ctx.shadowColor = "rgba(255,255,255,0.5)"
+        ctx.shadowBlur = 1
+      }
       ctx.fillText(label, x + pixelSize / 2, y + pixelSize / 2)
+      ctx.shadowColor = "transparent"
+      ctx.shadowBlur = 0
     }
   }
 
