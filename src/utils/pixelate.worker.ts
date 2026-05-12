@@ -1,5 +1,5 @@
-import { COLOR_TABLE, buildColorLUT, lookupColor, perceptualDist } from "./colorMap"
-import type { ColorLUT, ColorEntry } from "./colorMap"
+import { COLOR_TABLE } from "./colorMap"
+import type { ColorEntry } from "./colorMap"
 
 interface PixelData {
   dmc: string
@@ -27,32 +27,34 @@ interface WorkerResponse {
   adjacentPairs: number
 }
 
-// ========== LUT Cache ==========
-
-const lutCache = new Map<string, ColorLUT>()
-
-function getLUT(palette: ColorEntry[]): ColorLUT {
-  const key = palette.map((c) => c.dmc).sort().join(",")
-  let lut = lutCache.get(key)
-  if (!lut) {
-    lut = buildColorLUT(palette.length > 0 ? palette : COLOR_TABLE)
-    lutCache.set(key, lut)
-  }
-  return lut
+// ========== Weighted Euclidean (reference formula) ==========
+// Luminance-adaptive: green 4x, red/blue adjust with average red level
+function colorDistSq(
+  r1: number, g1: number, b1: number,
+  r2: number, g2: number, b2: number
+): number {
+  const dr = r1 - r2
+  const dg = g1 - g2
+  const db = b1 - b2
+  const avgR = (r1 + r2) / 2
+  return ((512 + avgR) * dr * dr >> 8) + 4 * dg * dg + ((768 - avgR) * db * db >> 8)
 }
 
-// ========== Nearest Palette Match ==========
+// ========== Nearest Palette Match (exact, no LUT) ==========
 
-function nearestColor(r: number, g: number, b: number, lut: ColorLUT): PixelData {
-  const lutEntry = lookupColor(lut, r, g, b)
+function nearestColor(r: number, g: number, b: number, palette: ColorEntry[]): PixelData {
+  let minDist = Infinity
+  let best = palette[0]
+  for (const c of palette) {
+    const dist = colorDistSq(r, g, b, c.r, c.g, c.b)
+    if (dist < minDist) {
+      minDist = dist
+      best = c
+    }
+  }
   return {
-    dmc: lutEntry.dmc,
-    colorName: lutEntry.name,
-    hex: lutEntry.hex,
-    r: lutEntry.r,
-    g: lutEntry.g,
-    b: lutEntry.b,
-    textColor: lutEntry.textColor,
+    dmc: best.dmc, colorName: best.name, hex: best.hex,
+    r: best.r, g: best.g, b: best.b, textColor: "#000000",
   }
 }
 
@@ -62,9 +64,8 @@ function isNearWhite(r: number, g: number, b: number): boolean {
   return r > 220 && g > 220 && b > 220 && (0.299 * r + 0.587 * g + 0.114 * b) > 225
 }
 
-// ========== Majority Filter (8-connected neighbors) ==========
-// If current color has <=2 votes among 8 neighbors AND dominant neighbor has >=4 votes,
-// replace current with dominant. Removes speckle noise.
+// ========== Majority Filter (8-connected, reference algorithm) ==========
+// If current color has <=2 votes among 8 neighbors AND dominant has >=4 votes, replace
 function majorityFilter(
   matrix: PixelData[][], cols: number, rows: number
 ): PixelData[][] {
@@ -95,7 +96,6 @@ function majorityFilter(
 
       const curVotes = votes.get(cur.dmc) || 0
       if (curVotes <= 2 && maxVotes >= 4) {
-        // Replace with the dominant neighbor's full pixel data
         const domPixel = neighbors.find((n) => n.dmc === dominantDmc)!
         out[row][col] = { ...domPixel }
       }
@@ -129,7 +129,7 @@ function simplifyColors(
       let minDist = Infinity
       let nearest = keepColors[0]
       for (const k of keepColors) {
-        const dist = perceptualDist(p.r, p.g, p.b, k.r, k.g, k.b)
+        const dist = colorDistSq(p.r, p.g, p.b, k.r, k.g, k.b)
         if (dist < minDist) { minDist = dist; nearest = k }
       }
       return nearest
@@ -161,26 +161,23 @@ self.onmessage = (e: MessageEvent) => {
     return
   }
 
-  const lut = getLUT(palette)
+  const colors = palette.length > 0 ? palette : COLOR_TABLE
   const cols = Math.ceil(width / pixelSize)
   const rows = Math.ceil(height / pixelSize)
 
-  // Step 1: Resize image to target grid dimensions using canvas
-  // This uses the browser's high-quality resampling (anti-aliasing)
+  // Step 1: Canvas resampling (browser-quality anti-aliasing)
   const offscreen = new OffscreenCanvas(cols, rows)
   const ctx = offscreen.getContext("2d")!
   ctx.imageSmoothingEnabled = true
   ctx.imageSmoothingQuality = "high"
 
-  // Draw original image scaled down to grid size
   const srcCanvas = new OffscreenCanvas(width, height)
-  const srcCtx = srcCanvas.getContext("2d")!
-  srcCtx.putImageData(imageData, 0, 0)
+  srcCanvas.getContext("2d")!.putImageData(imageData, 0, 0)
   ctx.drawImage(srcCanvas, 0, 0, cols, rows)
 
   const downscaled = ctx.getImageData(0, 0, cols, rows)
 
-  // Step 2: Map each pixel to nearest palette color
+  // Step 2: Per-pixel exact nearest palette match (no LUT)
   let matrix: PixelData[][] = []
   for (let row = 0; row < rows; row++) {
     const rowData: PixelData[] = []
@@ -191,7 +188,7 @@ self.onmessage = (e: MessageEvent) => {
       const b = downscaled.data[i + 2]
 
       if (removeBg && isNearWhite(r, g, b)) {
-        const white = palette.find((c) => c.dmc === "A1") ?? palette[0]
+        const white = colors.find((c) => c.dmc === "A1") ?? colors[0]
         rowData.push({
           dmc: white.dmc, colorName: white.name, hex: white.hex,
           r: white.r, g: white.g, b: white.b, textColor: "#000000",
@@ -199,12 +196,12 @@ self.onmessage = (e: MessageEvent) => {
         continue
       }
 
-      rowData.push(nearestColor(r, g, b, lut))
+      rowData.push(nearestColor(r, g, b, colors))
     }
     matrix.push(rowData)
   }
 
-  // Step 3: Majority filter (noise reduction) - apply TWICE
+  // Step 3: Majority filter x2 (reference algorithm)
   if (quality === "detail") {
     matrix = majorityFilter(matrix, cols, rows)
     matrix = majorityFilter(matrix, cols, rows)
