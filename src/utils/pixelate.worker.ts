@@ -282,11 +282,10 @@ self.onmessage = (e: MessageEvent) => {
   const cols = Math.ceil(width / pixelSize)
   const rows = Math.ceil(height / pixelSize)
 
-  // Step 1: Canvas resampling to target grid size
+  // Step 1: Canvas resampling — nearest-neighbor preserves thin lines (whiskers, outlines)
   const offscreen = new OffscreenCanvas(cols, rows)
   const ctx = offscreen.getContext("2d")!
-  ctx.imageSmoothingEnabled = true
-  ctx.imageSmoothingQuality = "high"
+  ctx.imageSmoothingEnabled = false
 
   const srcCanvas = new OffscreenCanvas(width, height)
   srcCanvas.getContext("2d")!.putImageData(srcData, 0, 0)

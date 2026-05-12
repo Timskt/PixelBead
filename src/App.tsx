@@ -339,10 +339,28 @@ export default function App() {
                 {compareMode ? "退出对比" : "👁 对比"}
               </button>
               {originalImageRef.current && (
-                <button onClick={() => setShowCrop(true)}
-                  className="text-xs px-3 py-1.5 rounded-full shadow-sm bg-white/90 backdrop-blur-sm text-text-light active:scale-95 transition-transform">
-                  ✂ 裁剪
-                </button>
+                <>
+                  <button onClick={() => setShowCrop(true)}
+                    className="text-xs px-3 py-1.5 rounded-full shadow-sm bg-white/90 backdrop-blur-sm text-text-light active:scale-95 transition-transform">
+                    ✂ 裁剪
+                  </button>
+                  {image !== originalImageRef.current && (
+                    <button onClick={() => {
+                      const orig = originalImageRef.current!
+                      setImage(orig)
+                      setImageSize({ w: orig.width, h: orig.height })
+                      const tc = document.createElement("canvas")
+                      tc.width = orig.width; tc.height = orig.height
+                      tc.getContext("2d")!.drawImage(orig, 0, 0)
+                      originalUrlRef.current = tc.toDataURL("image/jpeg", 0.8)
+                      doProcess(orig)
+                      showToast("已恢复原图")
+                    }}
+                      className="text-xs px-3 py-1.5 rounded-full shadow-sm bg-white/90 backdrop-blur-sm text-text-light active:scale-95 transition-transform">
+                    ↩ 恢复原图
+                    </button>
+                  )}
+                </>
               )}
             </div>
           )}

@@ -76,7 +76,7 @@ export default function PixelCanvas({
     if (!node) return
     ;(containerRef as React.MutableRefObject<HTMLDivElement | null>).current = node
 
-    const onStart = (e: TouchEvent) => {
+    const onTouchStart = (e: TouchEvent) => {
       setTooltip(null)
       if (e.touches.length === 1) {
         isPanningRef.current = true
@@ -89,7 +89,7 @@ export default function PixelCanvas({
       }
     }
 
-    const onMove = (e: TouchEvent) => {
+    const onTouchMove = (e: TouchEvent) => {
       e.preventDefault()
       if (e.touches.length === 1 && isPanningRef.current) {
         const dx = e.touches[0].clientX - lastTouch.current.x
@@ -103,16 +103,41 @@ export default function PixelCanvas({
         const dy = e.touches[0].clientY - e.touches[1].clientY
         const dist = Math.sqrt(dx * dx + dy * dy)
         if (lastDist.current > 0) {
-          scaleRef.current = Math.max(0.2, Math.min(5, scaleRef.current * (dist / lastDist.current)))
+          scaleRef.current = Math.max(0.2, Math.min(20, scaleRef.current * (dist / lastDist.current)))
           applyTransform()
         }
         lastDist.current = dist
       }
     }
 
-    const onEnd = () => {
+    const onTouchEnd = () => {
       isPanningRef.current = false
       lastDist.current = 0
+      setZoomDisplay(Math.round(scaleRef.current * 100))
+    }
+
+    // Mouse drag panning
+    const onMouseDown = (e: MouseEvent) => {
+      if (e.button !== 0) return
+      setTooltip(null)
+      isPanningRef.current = true
+      lastTouch.current = { x: e.clientX, y: e.clientY }
+      node.style.cursor = "grabbing"
+    }
+
+    const onMouseMove = (e: MouseEvent) => {
+      if (!isPanningRef.current) return
+      const dx = e.clientX - lastTouch.current.x
+      const dy = e.clientY - lastTouch.current.y
+      translateRef.current.x += dx
+      translateRef.current.y += dy
+      lastTouch.current = { x: e.clientX, y: e.clientY }
+      applyTransform()
+    }
+
+    const onMouseUp = () => {
+      isPanningRef.current = false
+      node.style.cursor = ""
       setZoomDisplay(Math.round(scaleRef.current * 100))
     }
 
@@ -121,20 +146,26 @@ export default function PixelCanvas({
       e.preventDefault()
       setTooltip(null)
       const delta = e.deltaY > 0 ? 0.9 : 1.1
-      scaleRef.current = Math.max(0.2, Math.min(5, scaleRef.current * delta))
+      scaleRef.current = Math.max(0.2, Math.min(20, scaleRef.current * delta))
       applyTransform()
       setZoomDisplay(Math.round(scaleRef.current * 100))
     }
 
-    node.addEventListener("touchstart", onStart, { passive: true })
-    node.addEventListener("touchmove", onMove, { passive: false })
-    node.addEventListener("touchend", onEnd)
+    node.addEventListener("touchstart", onTouchStart, { passive: true })
+    node.addEventListener("touchmove", onTouchMove, { passive: false })
+    node.addEventListener("touchend", onTouchEnd)
+    node.addEventListener("mousedown", onMouseDown)
+    window.addEventListener("mousemove", onMouseMove)
+    window.addEventListener("mouseup", onMouseUp)
     node.addEventListener("wheel", onWheel, { passive: false })
 
     return () => {
-      node.removeEventListener("touchstart", onStart)
-      node.removeEventListener("touchmove", onMove)
-      node.removeEventListener("touchend", onEnd)
+      node.removeEventListener("touchstart", onTouchStart)
+      node.removeEventListener("touchmove", onTouchMove)
+      node.removeEventListener("touchend", onTouchEnd)
+      node.removeEventListener("mousedown", onMouseDown)
+      window.removeEventListener("mousemove", onMouseMove)
+      window.removeEventListener("mouseup", onMouseUp)
       node.removeEventListener("wheel", onWheel)
     }
   }, [applyTransform])
