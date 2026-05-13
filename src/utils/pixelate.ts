@@ -101,7 +101,9 @@ export function pixelateWithWorker(
   maxColors: number = 0,
   removeBg: boolean = false,
   scale: number = 1,
-  cartoon: boolean = false
+  cartoon: boolean = false,
+  targetCols: number = 0,
+  targetRows: number = 0
 ): Promise<PixelateResult> {
   return new Promise((resolve) => {
     const gen = ++jobGeneration
@@ -120,7 +122,7 @@ export function pixelateWithWorker(
     }
 
     w.addEventListener("message", handler)
-    w.postMessage({ imageData, pixelSize, palette, quality, maxColors, removeBg, scale, cartoon }, [imageData.data.buffer])
+    w.postMessage({ imageData, pixelSize, palette, quality, maxColors, removeBg, scale, cartoon, targetCols, targetRows }, [imageData.data.buffer])
   })
 }
 

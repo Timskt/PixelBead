@@ -20,6 +20,8 @@ interface WorkerRequest {
   removeBg: boolean
   scale: number
   cartoon: boolean
+  targetCols: number
+  targetRows: number
 }
 
 interface WorkerResponse {
@@ -305,10 +307,10 @@ function applyCartoonFilter(data: ImageData): ImageData {
 
 // ========== Main Pipeline ==========
 self.onmessage = (e: MessageEvent) => {
-  const { imageData, pixelSize, palette, quality, maxColors, removeBg, scale, cartoon } = e.data as WorkerRequest
+  const { imageData, pixelSize, palette, quality, maxColors, removeBg, scale, cartoon, targetCols, targetRows } = e.data as WorkerRequest
   let { width, height } = imageData
 
-  if (pixelSize <= 0) {
+  if (pixelSize <= 0 && targetCols <= 0) {
     self.postMessage({ matrix: [], cols: 0, rows: 0, adjacentPairs: 0 })
     return
   }
@@ -329,26 +331,43 @@ self.onmessage = (e: MessageEvent) => {
     scaleCtx.imageSmoothingEnabled = true
     scaleCtx.imageSmoothingQuality = "high"
     const srcCanvas = new OffscreenCanvas(width, height)
-    srcCanvas.getContext("2d")!.putImageData(imageData, 0, 0)
+    srcCanvas.getContext("2d")!.putImageData(srcData, 0, 0)
     scaleCtx.drawImage(srcCanvas, 0, 0, sw, sh)
     srcData = scaleCtx.getImageData(0, 0, sw, sh)
     width = sw
     height = sh
   }
 
-  const cols = Math.ceil(width / pixelSize)
-  const rows = Math.ceil(height / pixelSize)
+  let cols: number, rows: number
 
-  // Step 1: Canvas resampling — nearest-neighbor preserves thin lines (whiskers, outlines)
-  const offscreen = new OffscreenCanvas(cols, rows)
-  const ctx = offscreen.getContext("2d")!
-  ctx.imageSmoothingEnabled = false
+  if (targetCols > 0 && targetRows > 0) {
+    // Exact target grid: resize image directly to target dimensions
+    cols = targetCols
+    rows = targetRows
+    const offscreen = new OffscreenCanvas(cols, rows)
+    const ctx = offscreen.getContext("2d")!
+    ctx.imageSmoothingEnabled = false
+    const srcCanvas = new OffscreenCanvas(width, height)
+    srcCanvas.getContext("2d")!.putImageData(srcData, 0, 0)
+    ctx.drawImage(srcCanvas, 0, 0, cols, rows)
+    srcData = ctx.getImageData(0, 0, cols, rows)
+    width = cols
+    height = rows
+  } else {
+    // Standard: use pixelSize for grid
+    cols = Math.ceil(width / pixelSize)
+    rows = Math.ceil(height / pixelSize)
+    // Step 1: Canvas resampling
+    const offscreen = new OffscreenCanvas(cols, rows)
+    const ctx = offscreen.getContext("2d")!
+    ctx.imageSmoothingEnabled = false
+    const srcCanvas = new OffscreenCanvas(width, height)
+    srcCanvas.getContext("2d")!.putImageData(srcData, 0, 0)
+    ctx.drawImage(srcCanvas, 0, 0, cols, rows)
+    srcData = ctx.getImageData(0, 0, cols, rows)
+  }
 
-  const srcCanvas = new OffscreenCanvas(width, height)
-  srcCanvas.getContext("2d")!.putImageData(srcData, 0, 0)
-  ctx.drawImage(srcCanvas, 0, 0, cols, rows)
-
-  const downscaled = ctx.getImageData(0, 0, cols, rows)
+  const downscaled = srcData
 
   // Step 2: Determine palette (auto-extract if using "无限制" / all colors)
   let colors: ColorEntry[]

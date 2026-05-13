@@ -97,6 +97,8 @@ export default function App() {
   const [cartoon, setCartoon] = useState(false)
   const [scale, setScale] = useState(100)
   const [showCrop, setShowCrop] = useState(false)
+  const [targetCols, setTargetCols] = useState(0)
+  const [targetRows, setTargetRows] = useState(0)
   const [displayMode, setDisplayMode] = useState<DisplayMode>("dmc")
   const [brand, setBrand] = useState("全部")
   const [result, setResult] = useState<PixelateResult | null>(null)
@@ -110,8 +112,8 @@ export default function App() {
   const appRef = useRef<HTMLDivElement>(null)
 
   // Stable ref for latest params (avoids stale closures)
-  const paramsRef = useRef({ pixelSize, brand, quality, maxColors, removeBg, maxGrid, scale, cartoon })
-  paramsRef.current = { pixelSize, brand, quality, maxColors, removeBg, maxGrid, scale, cartoon }
+  const paramsRef = useRef({ pixelSize, brand, quality, maxColors, removeBg, maxGrid, scale, cartoon, targetCols, targetRows })
+  paramsRef.current = { pixelSize, brand, quality, maxColors, removeBg, maxGrid, scale, cartoon, targetCols, targetRows }
 
   const doProcess = useCallback((img: HTMLImageElement, size?: number) => {
     const p = paramsRef.current
@@ -119,7 +121,7 @@ export default function App() {
     setLoading(true)
     try {
       const imageData = getImageData(img)
-      pixelateWithWorker(imageData, sz, p.brand, p.quality, p.maxColors, p.removeBg, p.scale / 100, p.cartoon)
+      pixelateWithWorker(imageData, sz, p.brand, p.quality, p.maxColors, p.removeBg, p.scale / 100, p.cartoon, p.targetCols, p.targetRows)
         .then((res) => { setResult(res); setLoading(false) })
         .catch((err) => { console.error(err); showToast("处理失败"); setLoading(false) })
     } catch (err) {
@@ -214,14 +216,17 @@ export default function App() {
   const handleSliderChange = useCallback((value: number) => {
     setPixelSize(value)
     setMaxGrid(0)
+    setTargetCols(0)
+    setTargetRows(0)
     if (!image) return
     setLoading(true)
     setTimeout(() => doProcess(image, value), 250)
   }, [image, doProcess])
 
-  // Grid preset
   const handleGridPreset = useCallback((grid: number) => {
     setMaxGrid(grid)
+    setTargetCols(0)
+    setTargetRows(0)
     if (!image || grid <= 0) return
     const autoSize = calcPixelSize(image.width, image.height, grid)
     setPixelSize(autoSize)
@@ -516,10 +521,13 @@ export default function App() {
                   <MatrixInput
                     value={result.width}
                     onApply={(w) => {
-                      if (image) {
+                      if (image && w >= 1) {
                         const ps = Math.max(1, Math.round(image.width / w))
+                        const autoH = Math.ceil(image.height / ps)
                         setPixelSize(ps)
                         setMaxGrid(0)
+                        setTargetCols(w)
+                        setTargetRows(autoH)
                         setTimeout(() => doProcess(image, ps), 150)
                       }
                     }}
@@ -528,10 +536,13 @@ export default function App() {
                   <MatrixInput
                     value={result.height}
                     onApply={(h) => {
-                      if (image) {
+                      if (image && h >= 1) {
                         const ps = Math.max(1, Math.round(image.height / h))
+                        const autoW = Math.ceil(image.width / ps)
                         setPixelSize(ps)
                         setMaxGrid(0)
+                        setTargetCols(autoW)
+                        setTargetRows(h)
                         setTimeout(() => doProcess(image, ps), 150)
                       }
                     }}
