@@ -40,3 +40,6 @@ Thumbs.db
 
 # Wrangler
 .wrangler/
+
+.dev.vars*
+!.dev.vars.example
