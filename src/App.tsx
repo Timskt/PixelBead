@@ -5,6 +5,7 @@ import PixelCanvas from "./components/PixelCanvas"
 import ActionBar from "./components/ActionBar"
 import BeadSummary from "./components/BeadSummary"
 import Loading from "./components/Loading"
+import MatrixInput from "./components/MatrixInput"
 import CropOverlay, { type CropRect } from "./components/CropOverlay"
 import { useToast, ToastDisplay } from "./components/Toast"
 import {
@@ -391,7 +392,7 @@ export default function App() {
           <div className="flex items-center justify-between">
             <span className="text-sm font-semibold text-text">目标网格</span>
             <div className="flex items-center gap-1">
-              <input type="number" min={2} max={500} value={maxGrid || ""}
+              <input type="number" min={2} value={maxGrid || ""}
                 placeholder="自定义"
                 onChange={(e) => {
                   const v = parseInt(e.target.value, 10)
@@ -512,29 +513,29 @@ export default function App() {
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-1">
                   <span>矩阵:</span>
-                  <input type="number" min={1} value={result.width}
-                    onChange={(e) => {
-                      const w = parseInt(e.target.value, 10)
-                      if (!isNaN(w) && w >= 1 && image) {
+                  <MatrixInput
+                    value={result.width}
+                    onApply={(w) => {
+                      if (image) {
                         const ps = Math.max(1, Math.round(image.width / w))
                         setPixelSize(ps)
                         setMaxGrid(0)
                         setTimeout(() => doProcess(image, ps), 150)
                       }
                     }}
-                    className="w-14 text-center text-xs font-bold text-primary bg-primary/10 px-1.5 py-0.5 rounded border-none outline-none focus:ring-1 focus:ring-primary/30" />
+                  />
                   <span>×</span>
-                  <input type="number" min={1} value={result.height}
-                    onChange={(e) => {
-                      const h = parseInt(e.target.value, 10)
-                      if (!isNaN(h) && h >= 1 && image) {
+                  <MatrixInput
+                    value={result.height}
+                    onApply={(h) => {
+                      if (image) {
                         const ps = Math.max(1, Math.round(image.height / h))
                         setPixelSize(ps)
                         setMaxGrid(0)
                         setTimeout(() => doProcess(image, ps), 150)
                       }
                     }}
-                    className="w-14 text-center text-xs font-bold text-primary bg-primary/10 px-1.5 py-0.5 rounded border-none outline-none focus:ring-1 focus:ring-primary/30" />
+                  />
                 </div>
                 <span>{totalPixels} 颗 · {uniqueColors} 种颜色</span>
               </div>

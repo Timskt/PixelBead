@@ -6,7 +6,7 @@ interface Props {
 export default function PixelSlider({ value, onChange }: Props) {
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const v = parseInt(e.target.value, 10)
-    if (!isNaN(v)) onChange(Math.max(1, Math.min(500, v)))
+    if (!isNaN(v)) onChange(Math.max(1, v))
   }
 
   return (
@@ -16,7 +16,7 @@ export default function PixelSlider({ value, onChange }: Props) {
         <input
           type="number"
           min={1}
-          max={500}
+          step={1}
           value={value}
           onChange={handleInputChange}
           className="w-16 text-center text-sm font-bold text-primary bg-primary/10 px-2 py-1 rounded-full border-none outline-none focus:ring-2 focus:ring-primary/30"
@@ -29,7 +29,7 @@ export default function PixelSlider({ value, onChange }: Props) {
           min={1}
           max={500}
           step={1}
-          value={value}
+          value={Math.min(500, value)}
           onChange={(e) => onChange(Number(e.target.value))}
           className="flex-1"
         />
