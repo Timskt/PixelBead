@@ -510,7 +510,32 @@ export default function App() {
           {result && result.width > 0 && (
             <div className="text-xs text-text-light pt-1 space-y-1">
               <div className="flex items-center justify-between">
-                <span>矩阵: {result.width} × {result.height}</span>
+                <div className="flex items-center gap-1">
+                  <span>矩阵:</span>
+                  <input type="number" min={1} max={999} value={result.width}
+                    onChange={(e) => {
+                      const w = parseInt(e.target.value, 10)
+                      if (!isNaN(w) && w >= 1 && image) {
+                        const ps = Math.max(1, Math.min(500, Math.round(image.width / w)))
+                        setPixelSize(ps)
+                        setMaxGrid(0)
+                        setTimeout(() => doProcess(image, ps), 150)
+                      }
+                    }}
+                    className="w-12 text-center text-xs font-bold text-primary bg-primary/10 px-1 py-0.5 rounded border-none outline-none focus:ring-1 focus:ring-primary/30" />
+                  <span>×</span>
+                  <input type="number" min={1} max={999} value={result.height}
+                    onChange={(e) => {
+                      const h = parseInt(e.target.value, 10)
+                      if (!isNaN(h) && h >= 1 && image) {
+                        const ps = Math.max(1, Math.min(500, Math.round(image.height / h)))
+                        setPixelSize(ps)
+                        setMaxGrid(0)
+                        setTimeout(() => doProcess(image, ps), 150)
+                      }
+                    }}
+                    className="w-12 text-center text-xs font-bold text-primary bg-primary/10 px-1 py-0.5 rounded border-none outline-none focus:ring-1 focus:ring-primary/30" />
+                </div>
                 <span>{totalPixels} 颗 · {uniqueColors} 种颜色</span>
               </div>
               <div className="flex items-center justify-between">
