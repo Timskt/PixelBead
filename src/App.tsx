@@ -93,6 +93,7 @@ export default function App() {
   const [maxColors, setMaxColors] = useState(0)
   const [beadSize, setBeadSize] = useState(2.6)
   const [removeBg, setRemoveBg] = useState(false)
+  const [cartoon, setCartoon] = useState(false)
   const [scale, setScale] = useState(100)
   const [showCrop, setShowCrop] = useState(false)
   const [displayMode, setDisplayMode] = useState<DisplayMode>("dmc")
@@ -108,8 +109,8 @@ export default function App() {
   const appRef = useRef<HTMLDivElement>(null)
 
   // Stable ref for latest params (avoids stale closures)
-  const paramsRef = useRef({ pixelSize, brand, quality, maxColors, removeBg, maxGrid, scale })
-  paramsRef.current = { pixelSize, brand, quality, maxColors, removeBg, maxGrid, scale }
+  const paramsRef = useRef({ pixelSize, brand, quality, maxColors, removeBg, maxGrid, scale, cartoon })
+  paramsRef.current = { pixelSize, brand, quality, maxColors, removeBg, maxGrid, scale, cartoon }
 
   const doProcess = useCallback((img: HTMLImageElement, size?: number) => {
     const p = paramsRef.current
@@ -117,7 +118,7 @@ export default function App() {
     setLoading(true)
     try {
       const imageData = getImageData(img)
-      pixelateWithWorker(imageData, sz, p.brand, p.quality, p.maxColors, p.removeBg, p.scale / 100)
+      pixelateWithWorker(imageData, sz, p.brand, p.quality, p.maxColors, p.removeBg, p.scale / 100, p.cartoon)
         .then((res) => { setResult(res); setLoading(false) })
         .catch((err) => { console.error(err); showToast("处理失败"); setLoading(false) })
     } catch (err) {
@@ -131,7 +132,7 @@ export default function App() {
   useEffect(() => {
     if (!image) return
     doProcess(image)
-  }, [brand, quality, maxColors, removeBg, scale, image, doProcess])
+  }, [brand, quality, maxColors, removeBg, scale, cartoon, image, doProcess])
 
   // Image load handler
   const handleImageLoad = useCallback(async (file: File) => {
@@ -282,7 +283,7 @@ export default function App() {
     const hash = encodeSettings({
       grid: maxGrid, px: pixelSize, q: quality,
       colors: maxColors, bead: beadSize, bg: removeBg ? 1 : 0,
-      mode: displayMode, brand, scale,
+      mode: displayMode, brand, scale, cartoon: cartoon ? 1 : 0,
     })
     history.replaceState(null, "", "#" + hash)
   },     [maxGrid, pixelSize, quality, maxColors, beadSize, removeBg, displayMode, brand, scale])
@@ -388,15 +389,32 @@ export default function App() {
         {/* Controls */}
         <section className="mb-4 bg-bg-card rounded-2xl p-4 shadow-sm space-y-3">
           <div className="flex items-center justify-between">
-            <span className="text-sm font-semibold text-text">目标尺寸</span>
-            <div className="flex bg-bg rounded-full p-0.5 flex-wrap gap-0.5">
-              {GRID_PRESETS.map((p) => (
-                <button key={p.value} onClick={() => handleGridPreset(p.value)}
-                  className={`px-2.5 py-1.5 text-xs font-semibold rounded-full transition-all ${maxGrid === p.value ? "bg-primary text-white shadow-sm" : "text-text-light"}`}>
-                  {p.label}
-                </button>
-              ))}
+            <span className="text-sm font-semibold text-text">目标网格</span>
+            <div className="flex items-center gap-1">
+              <input type="number" min={2} max={500} value={maxGrid || ""}
+                placeholder="自定义"
+                onChange={(e) => {
+                  const v = parseInt(e.target.value, 10)
+                  if (!isNaN(v) && v >= 2) {
+                    setMaxGrid(v)
+                    if (image) {
+                      const autoSize = calcPixelSize(image.width, image.height, v)
+                      setPixelSize(autoSize)
+                      setTimeout(() => doProcess(image, autoSize), 150)
+                    }
+                  }
+                }}
+                className="w-16 text-center text-sm font-bold text-primary bg-primary/10 px-2 py-1 rounded-full border-none outline-none focus:ring-2 focus:ring-primary/30" />
+              <span className="text-xs text-text-light">格</span>
             </div>
+          </div>
+          <div className="flex bg-bg rounded-full p-0.5 flex-wrap gap-0.5">
+            {GRID_PRESETS.map((p) => (
+              <button key={p.value} onClick={() => handleGridPreset(p.value)}
+                className={`px-2.5 py-1.5 text-xs font-semibold rounded-full transition-all ${maxGrid === p.value ? "bg-primary text-white shadow-sm" : "text-text-light"}`}>
+                {p.label}
+              </button>
+            ))}
           </div>
 
           <PixelSlider value={pixelSize} onChange={handleSliderChange} />
@@ -442,6 +460,8 @@ export default function App() {
               </div>
               <button onClick={() => handleRemoveBgChange(!removeBg)}
                 className={`px-3 py-1.5 text-xs font-semibold rounded-full transition-all ${removeBg ? "bg-primary text-white shadow-sm" : "bg-bg text-text-light border border-border"}`}>去白底</button>
+              <button onClick={() => setCartoon((v) => !v)}
+                className={`px-3 py-1.5 text-xs font-semibold rounded-full transition-all ${cartoon ? "bg-primary text-white shadow-sm" : "bg-bg text-text-light border border-border"}`}>卡通</button>
             </div>
           </div>
 

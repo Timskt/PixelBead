@@ -19,6 +19,7 @@ interface WorkerRequest {
   maxColors: number
   removeBg: boolean
   scale: number
+  cartoon: boolean
 }
 
 interface WorkerResponse {
@@ -252,9 +253,59 @@ function mergeAdjacent(matrix: PixelData[][], cols: number, rows: number): numbe
   return merged
 }
 
+// ========== Cartoon Style Filter ==========
+// Posterize + edge enhancement for cel-shaded look
+function applyCartoonFilter(data: ImageData): ImageData {
+  const { width, height } = data
+  const src = data.data
+  const out = new Uint8ClampedArray(src.length)
+
+  // Posterize: reduce each channel to 6 levels
+  const levels = 6
+  const step = 255 / (levels - 1)
+  for (let i = 0; i < src.length; i += 4) {
+    out[i] = Math.round(Math.round(src[i] / step) * step)
+    out[i + 1] = Math.round(Math.round(src[i + 1] / step) * step)
+    out[i + 2] = Math.round(Math.round(src[i + 2] / step) * step)
+    out[i + 3] = src[i + 3]
+  }
+
+  // Edge detection on posterized image
+  const getGray = (x: number, y: number): number => {
+    const cx = Math.max(0, Math.min(width - 1, x))
+    const cy = Math.max(0, Math.min(height - 1, y))
+    const i = (cy * width + cx) * 4
+    return 0.299 * out[i] + 0.587 * out[i + 1] + 0.114 * out[i + 2]
+  }
+
+  const edges = new Uint8Array(width * height)
+  for (let y = 1; y < height - 1; y++) {
+    for (let x = 1; x < width - 1; x++) {
+      const tl = getGray(x - 1, y - 1), tc = getGray(x, y - 1), tr = getGray(x + 1, y - 1)
+      const ml = getGray(x - 1, y), mr = getGray(x + 1, y)
+      const bl = getGray(x - 1, y + 1), bc = getGray(x, y + 1), br = getGray(x + 1, y + 1)
+      const gx = -tl + tr - 2 * ml + 2 * mr - bl + br
+      const gy = -tl - 2 * tc - tr + bl + 2 * bc + br
+      edges[y * width + x] = Math.sqrt(gx * gx + gy * gy) > 30 ? 1 : 0
+    }
+  }
+
+  // Darken edges
+  for (let i = 0; i < edges.length; i++) {
+    if (edges[i]) {
+      const pi = i * 4
+      out[pi] = Math.max(0, out[pi] - 40)
+      out[pi + 1] = Math.max(0, out[pi + 1] - 40)
+      out[pi + 2] = Math.max(0, out[pi + 2] - 40)
+    }
+  }
+
+  return new ImageData(out, width, height)
+}
+
 // ========== Main Pipeline ==========
 self.onmessage = (e: MessageEvent) => {
-  const { imageData, pixelSize, palette, quality, maxColors, removeBg, scale } = e.data as WorkerRequest
+  const { imageData, pixelSize, palette, quality, maxColors, removeBg, scale, cartoon } = e.data as WorkerRequest
   let { width, height } = imageData
 
   if (pixelSize <= 0) {
@@ -262,8 +313,14 @@ self.onmessage = (e: MessageEvent) => {
     return
   }
 
-  // Step 0: Scale image (preserve quality with high-quality resampling)
-  let srcData = imageData
+  // Apply cartoon filter before processing
+  let processedData = imageData
+  if (cartoon) {
+    processedData = applyCartoonFilter(imageData)
+  }
+
+  // Step 0: Scale image
+  let srcData = processedData
   if (scale > 0 && scale < 1) {
     const sw = Math.max(1, Math.round(width * scale))
     const sh = Math.max(1, Math.round(height * scale))

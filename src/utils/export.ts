@@ -99,7 +99,7 @@ export function exportMaterialTXT(
 ) {
   const total = counts.reduce((s, c) => s + c.count, 0)
   const lines: string[] = [
-    "PixelBead 拼豆用料清单",
+    "拼豆用料清单",
     "========================",
     "",
     `图案尺寸: ${cols} × ${rows}`,
@@ -121,7 +121,6 @@ export function exportMaterialTXT(
   lines.push("----    --------    -------    ----")
   lines.push(`${"".padEnd(8)}${"".padEnd(10)}总计${"".padEnd(6)}${total}`)
   lines.push("")
-  lines.push("生成工具: PixelBead - pixelbead.pages.dev")
 
   const blob = new Blob([lines.join("\n")], { type: "text/plain;charset=utf-8" })
   const url = URL.createObjectURL(blob)
@@ -217,7 +216,7 @@ export function exportMaterialImage(
 
   ctx.fillStyle = "#636E72"
   ctx.font = "11px 'PingFang SC','Noto Sans SC',sans-serif"
-  ctx.fillText("PixelBead - pixelbead.pages.dev", 20, h - 15)
+  ctx.fillText(`拼豆用料清单 · ${counts.length} 种颜色 · ${total} 颗`, 20, h - 15)
 
   exportPNG(canvas, filename)
 }
